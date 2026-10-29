@@ -46,24 +46,6 @@ LEAGUES_CONFIG = {
     }
 }
 
-# Fixtures programados de respaldo para cuando las casas no tienen cuotas abiertas en ese minuto
-BACKUP_FIXTURES = {
-    "soccer_colombia_primera_a": [
-        {"home": "Millonarios", "away": "Santa Fe", "date": "2026-10-31", "time": "06:10 PM"},
-        {"home": "Atlético Nacional", "away": "América de Cali", "date": "2026-10-31", "time": "08:20 PM"},
-        {"home": "Junior", "away": "Deportes Tolima", "date": "2026-11-01", "time": "04:00 PM"},
-        {"home": "Independiente Medellín", "away": "Once Caldas", "date": "2026-11-01", "time": "06:10 PM"},
-        {"home": "Deportivo Cali", "away": "Bucaramanga", "date": "2026-11-01", "time": "08:20 PM"}
-    ],
-    "soccer_epl": [
-        {"home": "Chelsea", "away": "Manchester United", "date": "2026-10-31", "time": "07:30 AM"},
-        {"home": "Manchester City", "away": "Brighton", "date": "2026-10-31", "time": "10:00 AM"},
-        {"home": "Tottenham Hotspur", "away": "Crystal Palace", "date": "2026-10-31", "time": "12:30 PM"},
-        {"home": "Aston Villa", "away": "Fulham", "date": "2026-10-31", "time": "03:00 PM"},
-        {"home": "Liverpool", "away": "Arsenal", "date": "2026-11-01", "time": "11:30 AM"}
-    ]
-}
-
 # --- BASE DE DATOS DE ESTADÍSTICAS ---
 def load_or_update_stats():
     now = time.time()
@@ -104,10 +86,41 @@ def load_or_update_stats():
         "Tottenham Hotspur": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
         "Tottenham": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
         "Brighton": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
+        "Brighton and Hove Albion": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
         "Aston Villa": {"gf_h": 1.35, "ga_h": 1.20, "gf_a": 1.10, "ga_a": 1.65, "xg_f": 1.30, "xg_a": 1.40, "rec_gf": 1.40, "rec_ga": 1.40},
         "Crystal Palace": {"gf_h": 1.05, "ga_h": 2.05, "gf_a": 1.20, "ga_a": 2.35, "xg_f": 1.10, "xg_a": 1.95, "rec_gf": 1.00, "rec_ga": 1.80},
         "Fulham": {"gf_h": 1.10, "ga_h": 1.10, "gf_a": 1.00, "ga_a": 1.50, "xg_f": 1.15, "xg_a": 1.35, "rec_gf": 1.20, "rec_ga": 1.40}
     }
+
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get("https://fbref.com/es/comps/41/Estadisticas-de-Primera-A", headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            table = soup.find("table", {"id": "results2026411_overall"})
+            if table:
+                for row in table.find_all("tr")[1:]:
+                    team_cell = row.find("td", {"data-stat": "team"})
+                    gf_cell = row.find("td", {"data-stat": "goals_for"})
+                    ga_cell = row.find("td", {"data-stat": "goals_against"})
+                    mp_cell = row.find("td", {"data-stat": "games"})
+                    if team_cell and gf_cell and ga_cell and mp_cell:
+                        t_name = team_cell.text.strip()
+                        mp = max(1, int(mp_cell.text.strip()))
+                        gf = float(gf_cell.text.strip()) / mp
+                        ga = float(ga_cell.text.strip()) / mp
+                        base_stats[t_name] = {
+                            "gf_h": round(gf * 1.25, 2),
+                            "ga_h": round(ga * 0.85, 2),
+                            "gf_a": round(gf * 0.75, 2),
+                            "ga_a": round(ga * 1.15, 2),
+                            "xg_f": round(gf * 1.05, 2),
+                            "xg_a": round(ga * 1.05, 2),
+                            "rec_gf": round(gf, 2),
+                            "rec_ga": round(ga, 2)
+                        }
+    except Exception:
+        pass
 
     try:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
@@ -179,6 +192,7 @@ def get_leagues():
 
 @app.route("/api/fixtures")
 def get_fixtures():
+    """Consulta The-Odds-API y descarta automáticamente partidos pasados."""
     league_key = request.args.get("league", "soccer_colombia_primera_a")
     date_str = request.args.get("date")  # "all" o "YYYY-MM-DD"
     
@@ -192,14 +206,23 @@ def get_fixtures():
     }
 
     matches = []
+    # Hora actual en UTC para filtrar eventos finalizados
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+
     try:
-        res = requests.get(url, params=params, timeout=8)
+        res = requests.get(url, params=params, timeout=10)
         if res.status_code == 200:
             events = res.json()
             for ev in events:
                 commence = ev.get("commence_time", "")
                 if len(commence) >= 16:
                     utc_dt = datetime.datetime.fromisoformat(commence.replace("Z", "+00:00"))
+                    
+                    # FILTRO ESTRICTO: Si el partido ya empezó hace más de 15 minutos, descartar
+                    if utc_dt < now_utc - datetime.timedelta(minutes=15):
+                        continue
+
+                    # Conversión a hora Colombia (UTC-5)
                     col_dt = utc_dt - datetime.timedelta(hours=5)
                     local_date = col_dt.strftime("%Y-%m-%d")
                     local_time = col_dt.strftime("%I:%M %p")
@@ -207,7 +230,6 @@ def get_fixtures():
                     local_date = commence[:10]
                     local_time = "--:--"
 
-                # Si es "all" trae toda la jornada; si es fecha específica la filtra
                 if date_str == "all" or not date_str or local_date == date_str:
                     matches.append({
                         "id": ev.get("id"),
@@ -218,22 +240,11 @@ def get_fixtures():
                         "label": f"{local_date} | {local_time} - {ev.get('home_team')} vs {ev.get('away_team')}",
                         "raw_event": ev
                     })
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error consultando Odds-API: {e}")
 
-    # Si la API no tiene cotizaciones abiertas para esa liga o fecha, usar el calendario oficial programado
-    if not matches and league_key in BACKUP_FIXTURES:
-        for b in BACKUP_FIXTURES[league_key]:
-            if date_str == "all" or not date_str or b["date"] == date_str:
-                matches.append({
-                    "id": f"backup_{b['home']}_{b['away']}",
-                    "home": b["home"],
-                    "away": b["away"],
-                    "date": b["date"],
-                    "time": b["time"],
-                    "label": f"{b['date']} | {b['time']} - {b['home']} vs {b['away']}",
-                    "raw_event": {}
-                })
+    # Ordenar cronológicamente
+    matches.sort(key=lambda x: x.get("label", ""))
 
     return jsonify({"matches": matches})
 
@@ -268,9 +279,9 @@ def analyze_match():
     prob = compute_probabilities(lambda_home, mu_away, market)
     fair_odds = round(1.0 / prob, 2)
 
-    # Consulta profunda de cuotas
+    # Consulta individual para profundizar cuotas en vivo
     bookmakers = raw_event.get("bookmakers", [])
-    if event_id and not event_id.startswith("backup_"):
+    if event_id:
         try:
             s_url = f"https://api.the-odds-api.com/v4/sports/{league_key}/events/{event_id}/odds"
             s_res = requests.get(s_url, params={
@@ -323,7 +334,7 @@ def analyze_match():
             elif "draftkings" in t_low or "sbtech" in t_low:
                 colombia_slots["Wplay (SBTech / DraftKings)"] = price
 
-    # Anclaje de mercado real
+    # Anclaje de cuotas al mercado real
     active_quotes = [p for p in colombia_slots.values() if p is not None]
     market_ref = sum(active_quotes) / len(active_quotes) if active_quotes else round(fair_odds * 0.94, 2)
 
@@ -401,7 +412,7 @@ def index():
         .quota-box { text-align: right; }
         .quota { font-size: 1.1rem; font-weight: 800; color: #fff; }
         .ev-tag { font-size: 0.72rem; font-weight: 600; }
-        .quick-days { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+        .quick-days { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
         .btn-day { background: #1e293b; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
         .btn-day.active { background: #0284c7; border-color: #38bdf8; }
         .metrics-sub { font-size: 0.72rem; color: var(--muted); text-align: center; margin-top: 4px; line-height: 1.4; }
@@ -422,11 +433,10 @@ def index():
             <select id="leagueSel" onchange="fetchMatches()"></select>
           </div>
           
-          <label style="font-size:0.75rem; color:var(--muted); font-weight:500; margin-bottom:4px; display:block;">Filtro de Fecha</label>
+          <label style="font-size:0.75rem; color:var(--muted); font-weight:500; margin-bottom:4px; display:block;">Filtro de Encuentros</label>
           <div class="quick-days">
-            <button type="button" class="btn-day active" id="btnAll" onclick="setFilterMode('all')">Toda la Fecha</button>
-            <button type="button" class="btn-day" id="btnToday" onclick="setFilterMode('today')">Hoy</button>
-            <button type="button" class="btn-day" id="btnWeekend" onclick="setFilterMode('weekend')">Sábado 31</button>
+            <button type="button" class="btn-day active" id="btnAll" onclick="setFilterMode('all')">Próximos Partidos (Todos)</button>
+            <button type="button" class="btn-day" id="btnDate" onclick="setFilterMode('date')">Por Fecha Específica</button>
           </div>
           
           <div class="field" style="display:none;" id="dateField">
@@ -434,7 +444,7 @@ def index():
           </div>
 
           <div class="field" style="margin-top: 10px;">
-            <label id="matchLabel">Partidos Disponibles</label>
+            <label id="matchLabel">Partidos Vigentes en Vivo</label>
             <select id="matchSel"></select>
           </div>
         </div>
@@ -486,6 +496,10 @@ def index():
           const lSel = document.getElementById("leagueSel");
           lSel.innerHTML = leagues.map(l => `<option value="${l.id}">${l.name}</option>`).join("");
           
+          // Fecha por defecto hoy
+          const today = new Date().toISOString().split('T')[0];
+          document.getElementById("dateInput").value = today;
+
           fetchMatches();
         }
 
@@ -496,13 +510,8 @@ def index():
           if (mode === 'all') {
             document.getElementById('btnAll').classList.add('active');
             document.getElementById('dateField').style.display = 'none';
-          } else if (mode === 'today') {
-            document.getElementById('btnToday').classList.add('active');
-            document.getElementById('dateInput').value = "2026-10-29";
-            document.getElementById('dateField').style.display = 'block';
-          } else if (mode === 'weekend') {
-            document.getElementById('btnWeekend').classList.add('active');
-            document.getElementById('dateInput').value = "2026-10-31";
+          } else {
+            document.getElementById('btnDate').classList.add('active');
             document.getElementById('dateField').style.display = 'block';
           }
           fetchMatches();
@@ -511,12 +520,12 @@ def index():
         async function fetchMatches() {
           const lKey = document.getElementById("leagueSel").value;
           let dateParam = "all";
-          if (currentMode !== 'all') {
+          if (currentMode === 'date') {
             dateParam = document.getElementById("dateInput").value;
           }
 
           const mSel = document.getElementById("matchSel");
-          mSel.innerHTML = "<option>Consultando partidos...</option>";
+          mSel.innerHTML = "<option>Consultando partidos vigentes...</option>";
 
           try {
             const res = await fetch(`/api/fixtures?league=${lKey}&date=${dateParam}`);
@@ -524,7 +533,7 @@ def index():
             currentMatches = data.matches || [];
 
             if (currentMatches.length === 0) {
-              mSel.innerHTML = "<option value='none'>No hay partidos disponibles para este filtro</option>";
+              mSel.innerHTML = "<option value='none'>No hay partidos programados con cuotas activas</option>";
             } else {
               mSel.innerHTML = currentMatches.map((m, i) => `
                 <option value="${i}">${m.label || (m.time + " | " + m.home + " vs " + m.away)}</option>
