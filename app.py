@@ -11,8 +11,8 @@ app = Flask(__name__)
 
 ODDS_API_KEY = "93fcf8558b6517575a6f6be7a2afcc81"
 CACHE_FILE = "stats_cache.json"
+FIXTURES_CACHE_FILE = "fixtures_cache.json"
 
-# Competiciones de América y Europa soportadas
 LEAGUES_CONFIG = {
     # --- AMÉRICA ---
     "soccer_colombia_primera_a": {
@@ -85,7 +85,7 @@ LEAGUES_CONFIG = {
     }
 }
 
-# Base de datos de métricas históricas y recientes por club
+# --- BASE DE DATOS DE ESTADÍSTICAS ---
 def load_or_update_stats():
     now = time.time()
     if os.path.exists(CACHE_FILE):
@@ -98,7 +98,7 @@ def load_or_update_stats():
             pass
 
     base_stats = {
-        # --- COLOMBIA ---
+        # Colombia
         "Millonarios": {"gf_h": 1.70, "ga_h": 0.65, "gf_a": 1.15, "ga_a": 0.90, "xg_f": 1.45, "xg_a": 0.85, "rec_gf": 1.80, "rec_ga": 0.60},
         "Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
         "Atlético Nacional": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.20, "ga_a": 1.00, "xg_f": 1.50, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
@@ -112,57 +112,41 @@ def load_or_update_stats():
         "Deportivo Pereira": {"gf_h": 1.35, "ga_h": 0.85, "gf_a": 0.85, "ga_a": 1.10, "xg_f": 1.15, "xg_a": 1.05, "rec_gf": 1.20, "rec_ga": 1.00},
         "Deportivo Pasto": {"gf_h": 1.40, "ga_h": 0.80, "gf_a": 0.75, "ga_a": 1.20, "xg_f": 1.15, "xg_a": 1.10, "rec_gf": 1.20, "rec_ga": 1.00},
         "La Equidad": {"gf_h": 1.25, "ga_h": 0.80, "gf_a": 0.85, "ga_a": 1.00, "xg_f": 1.10, "xg_a": 0.90, "rec_gf": 1.00, "rec_ga": 1.00},
+        "Aguilas Doradas": {"gf_h": 1.30, "ga_h": 0.90, "gf_a": 0.85, "ga_a": 1.15, "xg_f": 1.15, "xg_a": 1.05, "rec_gf": 1.00, "rec_ga": 1.20},
+        "Envigado": {"gf_h": 1.05, "ga_h": 1.20, "gf_a": 0.70, "ga_a": 1.40, "xg_f": 0.95, "xg_a": 1.35, "rec_gf": 0.80, "rec_ga": 1.40},
+        "Alianza": {"gf_h": 1.20, "ga_h": 1.10, "gf_a": 0.75, "ga_a": 1.35, "xg_f": 1.05, "xg_a": 1.25, "rec_gf": 1.00, "rec_ga": 1.20},
+        "Patriotas": {"gf_h": 1.00, "ga_h": 1.10, "gf_a": 0.60, "ga_a": 1.50, "xg_f": 0.85, "xg_a": 1.40, "rec_gf": 0.80, "rec_ga": 1.40},
+        "Jaguares": {"gf_h": 1.10, "ga_h": 1.00, "gf_a": 0.65, "ga_a": 1.30, "xg_f": 0.95, "xg_a": 1.20, "rec_gf": 0.80, "rec_ga": 1.00},
+        "Fortaleza": {"gf_h": 1.30, "ga_h": 0.95, "gf_a": 0.90, "ga_a": 1.10, "xg_f": 1.15, "xg_a": 1.05, "rec_gf": 1.20, "rec_ga": 1.00},
+        "Boyacá Chicó": {"gf_h": 1.20, "ga_h": 1.15, "gf_a": 0.65, "ga_a": 1.60, "xg_f": 0.90, "xg_a": 1.45, "rec_gf": 0.80, "rec_ga": 1.60},
 
-        # --- BRASIL (BRASILEIRÃO & COPA DO BRASIL) ---
+        # Brasil
         "Flamengo": {"gf_h": 2.15, "ga_h": 0.85, "gf_a": 1.65, "ga_a": 1.10, "xg_f": 1.95, "xg_a": 0.90, "rec_gf": 2.00, "rec_ga": 0.80},
         "Palmeiras": {"gf_h": 2.05, "ga_h": 0.75, "gf_a": 1.60, "ga_a": 0.95, "xg_f": 1.90, "xg_a": 0.85, "rec_gf": 1.80, "rec_ga": 0.80},
         "Botafogo": {"gf_h": 2.10, "ga_h": 0.80, "gf_a": 1.55, "ga_a": 1.05, "xg_f": 1.85, "xg_a": 0.90, "rec_gf": 2.20, "rec_ga": 1.00},
         "Atlético Mineiro": {"gf_h": 1.80, "ga_h": 0.90, "gf_a": 1.30, "ga_a": 1.15, "xg_f": 1.60, "xg_a": 1.05, "rec_gf": 1.60, "rec_ga": 1.20},
         "São Paulo": {"gf_h": 1.70, "ga_h": 0.85, "gf_a": 1.15, "ga_a": 1.20, "xg_f": 1.45, "xg_a": 1.00, "rec_gf": 1.40, "rec_ga": 1.00},
-        "Internacional": {"gf_h": 1.65, "ga_h": 0.80, "gf_a": 1.25, "ga_a": 1.10, "xg_f": 1.40, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 0.80},
-        "Cruzeiro": {"gf_h": 1.60, "ga_h": 0.85, "gf_a": 1.10, "ga_a": 1.25, "xg_f": 1.35, "xg_a": 1.10, "rec_gf": 1.20, "rec_ga": 1.00},
-        "Fluminense": {"gf_h": 1.50, "ga_h": 0.95, "gf_a": 1.05, "ga_a": 1.35, "xg_f": 1.30, "xg_a": 1.20, "rec_gf": 1.20, "rec_ga": 1.20},
-        "Corinthians": {"gf_h": 1.60, "ga_h": 1.00, "gf_a": 1.00, "ga_a": 1.40, "xg_f": 1.35, "xg_a": 1.25, "rec_gf": 1.40, "rec_ga": 1.40},
-        "Grêmio": {"gf_h": 1.55, "ga_h": 1.10, "gf_a": 1.05, "ga_a": 1.45, "xg_f": 1.30, "xg_a": 1.30, "rec_gf": 1.20, "rec_ga": 1.40},
 
-        # --- ARGENTINA & LIBERTADORES ---
+        # Argentina
         "River Plate": {"gf_h": 2.10, "ga_h": 0.65, "gf_a": 1.40, "ga_a": 0.90, "xg_f": 1.85, "xg_a": 0.80, "rec_gf": 1.80, "rec_ga": 0.60},
         "Boca Juniors": {"gf_h": 1.65, "ga_h": 0.70, "gf_a": 1.10, "ga_a": 1.00, "xg_f": 1.45, "xg_a": 0.85, "rec_gf": 1.40, "rec_ga": 0.80},
         "Racing Club": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.25, "ga_a": 1.10, "xg_f": 1.55, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
-        "Independiente": {"gf_h": 1.35, "ga_h": 0.70, "gf_a": 0.95, "ga_a": 0.95, "xg_f": 1.20, "xg_a": 0.85, "rec_gf": 1.00, "rec_ga": 0.60},
-        "San Lorenzo": {"gf_h": 1.25, "ga_h": 0.75, "gf_a": 0.85, "ga_a": 1.05, "xg_f": 1.10, "xg_a": 0.90, "rec_gf": 1.00, "rec_ga": 1.00},
-        "Vélez Sarsfield": {"gf_h": 1.60, "ga_h": 0.60, "gf_a": 1.20, "ga_a": 0.85, "xg_f": 1.45, "xg_a": 0.75, "rec_gf": 1.40, "rec_ga": 0.60},
-        "Talleres": {"gf_h": 1.55, "ga_h": 0.75, "gf_a": 1.15, "ga_a": 1.00, "xg_f": 1.35, "xg_a": 0.90, "rec_gf": 1.20, "rec_ga": 0.80},
 
-        # --- MLS (ESTADOS UNIDOS) ---
+        # MLS
         "Inter Miami CF": {"gf_h": 2.45, "ga_h": 1.30, "gf_a": 1.95, "ga_a": 1.50, "xg_f": 2.25, "xg_a": 1.35, "rec_gf": 2.60, "rec_ga": 1.40},
         "Inter Miami": {"gf_h": 2.45, "ga_h": 1.30, "gf_a": 1.95, "ga_a": 1.50, "xg_f": 2.25, "xg_a": 1.35, "rec_gf": 2.60, "rec_ga": 1.40},
-        "Columbus Crew": {"gf_h": 2.20, "ga_h": 1.05, "gf_a": 1.75, "ga_a": 1.25, "xg_f": 2.00, "xg_a": 1.15, "rec_gf": 2.20, "rec_ga": 1.00},
         "Los Angeles FC": {"gf_h": 2.25, "ga_h": 1.00, "gf_a": 1.65, "ga_a": 1.35, "xg_f": 2.05, "xg_a": 1.10, "rec_gf": 2.00, "rec_ga": 1.20},
-        "LAFC": {"gf_h": 2.25, "ga_h": 1.00, "gf_a": 1.65, "ga_a": 1.35, "xg_f": 2.05, "xg_a": 1.10, "rec_gf": 2.00, "rec_ga": 1.20},
-        "LA Galaxy": {"gf_h": 2.35, "ga_h": 1.40, "gf_a": 1.70, "ga_a": 1.65, "xg_f": 2.10, "xg_a": 1.50, "rec_gf": 2.40, "rec_ga": 1.60},
-        "FC Cincinnati": {"gf_h": 1.90, "ga_h": 1.15, "gf_a": 1.60, "ga_a": 1.30, "xg_f": 1.75, "xg_a": 1.20, "rec_gf": 1.80, "rec_ga": 1.20},
 
-        # --- LIGA MX (MÉXICO) ---
+        # México
         "América": {"gf_h": 2.15, "ga_h": 0.90, "gf_a": 1.70, "ga_a": 1.15, "xg_f": 1.95, "xg_a": 1.00, "rec_gf": 2.00, "rec_ga": 1.00},
-        "Club América": {"gf_h": 2.15, "ga_h": 0.90, "gf_a": 1.70, "ga_a": 1.15, "xg_f": 1.95, "xg_a": 1.00, "rec_gf": 2.00, "rec_ga": 1.00},
         "Cruz Azul": {"gf_h": 2.20, "ga_h": 0.80, "gf_a": 1.65, "ga_a": 1.00, "xg_f": 1.90, "xg_a": 0.90, "rec_gf": 2.20, "rec_ga": 0.80},
-        "Monterrey": {"gf_h": 1.95, "ga_h": 1.05, "gf_a": 1.50, "ga_a": 1.20, "xg_f": 1.75, "xg_a": 1.10, "rec_gf": 1.80, "rec_ga": 1.20},
-        "Tigres UANL": {"gf_h": 1.85, "ga_h": 0.85, "gf_a": 1.45, "ga_a": 1.10, "xg_f": 1.65, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
-        "Toluca": {"gf_h": 2.30, "ga_h": 1.10, "gf_a": 1.55, "ga_a": 1.35, "xg_f": 2.00, "xg_a": 1.25, "rec_gf": 2.20, "rec_ga": 1.40},
-        "Guadalajara": {"gf_h": 1.65, "ga_h": 0.90, "gf_a": 1.25, "ga_a": 1.25, "xg_f": 1.50, "xg_a": 1.10, "rec_gf": 1.40, "rec_ga": 1.20},
-        "Chivas Guadalajara": {"gf_h": 1.65, "ga_h": 0.90, "gf_a": 1.25, "ga_a": 1.25, "xg_f": 1.50, "xg_a": 1.10, "rec_gf": 1.40, "rec_ga": 1.20},
 
-        # --- PREMIER LEAGUE ---
+        # Europa
         "Manchester City": {"gf_h": 2.80, "ga_h": 0.95, "gf_a": 2.25, "ga_a": 1.15, "xg_f": 2.55, "xg_a": 0.90, "rec_gf": 2.60, "rec_ga": 1.00},
         "Arsenal": {"gf_h": 2.20, "ga_h": 0.70, "gf_a": 1.85, "ga_a": 0.85, "xg_f": 2.10, "xg_a": 0.80, "rec_gf": 2.00, "rec_ga": 0.80},
         "Liverpool": {"gf_h": 2.45, "ga_h": 0.85, "gf_a": 1.95, "ga_a": 1.10, "xg_f": 2.30, "xg_a": 1.00, "rec_gf": 2.20, "rec_ga": 0.80},
         "Chelsea": {"gf_h": 2.25, "ga_h": 1.70, "gf_a": 2.00, "ga_a": 1.90, "xg_f": 2.15, "xg_a": 1.65, "rec_gf": 2.40, "rec_ga": 1.40},
-        "Manchester United": {"gf_h": 1.35, "ga_h": 1.45, "gf_a": 1.25, "ga_a": 1.65, "xg_f": 1.40, "xg_a": 1.55, "rec_gf": 1.20, "rec_ga": 1.60},
-        "Tottenham Hotspur": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
-        "Tottenham": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
-        "Brighton": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
-        "Aston Villa": {"gf_h": 1.35, "ga_h": 1.20, "gf_a": 1.10, "ga_a": 1.65, "xg_f": 1.30, "xg_a": 1.40, "rec_gf": 1.40, "rec_ga": 1.40}
+        "Manchester United": {"gf_h": 1.35, "ga_h": 1.45, "gf_a": 1.25, "ga_a": 1.65, "xg_f": 1.40, "xg_a": 1.55, "rec_gf": 1.20, "rec_ga": 1.60}
     }
 
     try:
@@ -235,12 +219,25 @@ def get_leagues():
 @app.route("/api/fixtures")
 def get_fixtures():
     league_key = request.args.get("league", "soccer_colombia_primera_a")
-    date_str = request.args.get("date")
+    date_str = request.args.get("date")  # "all" o "today"
     
+    now = time.time()
+    cache_data = {}
+    if os.path.exists(FIXTURES_CACHE_FILE):
+        try:
+            with open(FIXTURES_CACHE_FILE, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+        except Exception:
+            cache_data = {}
+
+    cache_key = f"{league_key}_{date_str}"
+    if cache_key in cache_data and now - cache_data[cache_key].get("timestamp", 0) < 600:
+        return jsonify({"matches": cache_data[cache_key].get("matches", [])})
+
     matches = []
     now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-    # 1. Consulta en vivo a The-Odds-API
+    # 1. Consulta a The-Odds-API
     url = f"https://api.the-odds-api.com/v4/sports/{league_key}/odds"
     params = {
         "apiKey": ODDS_API_KEY.strip(),
@@ -251,7 +248,7 @@ def get_fixtures():
     }
 
     try:
-        res = requests.get(url, params=params, timeout=8)
+        res = requests.get(url, params=params, timeout=7)
         if res.status_code == 200:
             events = res.json()
             for ev in events:
@@ -259,7 +256,8 @@ def get_fixtures():
                 if len(commence) >= 16:
                     utc_dt = datetime.datetime.fromisoformat(commence.replace("Z", "+00:00"))
                     
-                    if utc_dt < now_utc - datetime.timedelta(hours=2):
+                    # Conservar partidos en juego (hasta 4 horas de margen)
+                    if utc_dt < now_utc - datetime.timedelta(hours=4):
                         continue
 
                     col_dt = utc_dt - datetime.timedelta(hours=5)
@@ -269,7 +267,8 @@ def get_fixtures():
                     local_date = commence[:10]
                     local_time = "--:--"
 
-                if date_str == "all" or not date_str or local_date == date_str:
+                today_col = (now_utc - datetime.timedelta(hours=5)).strftime("%Y-%m-%d")
+                if date_str == "all" or local_date == today_col:
                     matches.append({
                         "id": ev.get("id"),
                         "home": ev.get("home_team"),
@@ -282,25 +281,23 @@ def get_fixtures():
     except Exception:
         pass
 
-    # 2. Si es Colombia y The-Odds-API aún no tiene abiertas las líneas de hoy, consultar cartelera abierta
+    # 2. Si no hay registros en la API para Colombia, consultar cartelera oficial
     if not matches and league_key == "soccer_colombia_primera_a":
         try:
-            scrape_url = "https://www.promiedos.com.ar/colombiaprimera"
             headers = {"User-Agent": "Mozilla/5.0"}
-            s_res = requests.get(scrape_url, headers=headers, timeout=5)
+            s_res = requests.get("https://www.promiedos.com.ar/colombiaprimera", headers=headers, timeout=5)
             if s_res.status_code == 200:
                 soup = BeautifulSoup(s_res.text, "html.parser")
                 tables = soup.find_all("table")
                 for table in tables:
-                    rows = table.find_all("tr")
-                    for row in rows:
+                    for row in table.find_all("tr"):
                         teams = row.find_all("td", {"class": "equipo"})
                         time_td = row.find("td", {"class": "game-time"}) or row.find("td", {"class": "hora"})
                         if len(teams) >= 2:
                             h_name = teams[0].text.strip()
                             a_name = teams[1].text.strip()
                             match_hour = time_td.text.strip() if time_td else "Hoy"
-                            today_col = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)).strftime("%Y-%m-%d")
+                            today_col = (now_utc - datetime.timedelta(hours=5)).strftime("%Y-%m-%d")
                             matches.append({
                                 "id": f"live_{h_name}_{a_name}",
                                 "home": h_name,
@@ -310,6 +307,15 @@ def get_fixtures():
                                 "label": f"{today_col} | {match_hour} - {h_name} vs {a_name}",
                                 "raw_event": {}
                             })
+        except Exception:
+            pass
+
+    # Guardar en caché local para que nunca desaparezcan
+    if matches:
+        cache_data[cache_key] = {"timestamp": now, "matches": matches}
+        try:
+            with open(FIXTURES_CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -435,7 +441,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - Ligas de América & Europa</title>
+      <title>BetStat Pro - Fixtures Estables</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -574,14 +580,11 @@ def index():
 
         async function fetchMatches() {
           const lKey = document.getElementById("leagueSel").value;
-          const todayStr = new Date().toISOString().split('T')[0];
-          const dateParam = currentMode === 'today' ? todayStr : "all";
-
           const mSel = document.getElementById("matchSel");
           mSel.innerHTML = "<option>Consultando partidos vigentes...</option>";
 
           try {
-            const res = await fetch(`/api/fixtures?league=${lKey}&date=${dateParam}`);
+            const res = await fetch(`/api/fixtures?league=${lKey}&date=${currentMode}`);
             const data = await res.json();
             currentMatches = data.matches || [];
 
@@ -593,7 +596,7 @@ def index():
               `).join("");
             }
           } catch (e) {
-            mSel.innerHTML = "<option value='none'>Error al conectar con la API</option>";
+            mSel.innerHTML = "<option value='none'>Error al conectar con la cartelera</option>";
           }
         }
 
