@@ -99,7 +99,6 @@ def get_leagues():
 
 @app.route("/api/fixtures")
 def get_fixtures():
-    """Descarga los partidos reales con sus cuotas completas en vivo"""
     league_key = request.args.get("league", "soccer_epl")
     date_str = request.args.get("date")
     
@@ -109,7 +108,7 @@ def get_fixtures():
     url = f"https://api.the-odds-api.com/v4/sports/{league_key}/odds"
     params = {
         "apiKey": ODDS_API_KEY.strip(),
-        "regions": "eu,uk",
+        "regions": "eu,uk,us",
         "markets": "totals,h2h",
         "oddsFormat": "decimal",
         "dateFormat": "iso"
@@ -163,6 +162,7 @@ def analyze_match():
     home_name = req.get("home_name", "")
     away_name = req.get("away_name", "")
     raw_event = req.get("raw_event", {})
+    event_id = req.get("event_id")
 
     config = LEAGUES_CONFIG.get(league_key, {
         "default_home_avg": 1.50,
@@ -186,33 +186,49 @@ def analyze_match():
     prob = compute_fair_probabilities(lambda_home, mu_away, market)
     fair_odds = round(1.0 / prob, 2)
 
-    # Extraer cuotas 100% reales directo del payload del evento
+    # Consulta específica del evento para obtener todas las casas abiertas
     bookmakers_data = raw_event.get("bookmakers", [])
+    if event_id:
+        try:
+            single_url = f"https://api.the-odds-api.com/v4/sports/{league_key}/events/{event_id}/odds"
+            s_params = {
+                "apiKey": ODDS_API_KEY.strip(),
+                "regions": "eu,uk,us",
+                "markets": "totals,h2h",
+                "oddsFormat": "decimal"
+            }
+            s_res = requests.get(single_url, params=s_params, timeout=6)
+            if s_res.status_code == 200:
+                s_data = s_res.json()
+                if s_data.get("bookmakers"):
+                    bookmakers_data = s_data.get("bookmakers")
+        except Exception as e:
+            print(f"Aviso evento individual: {e}")
+
     extracted_odds = []
     seen = set()
 
     for b in bookmakers_data:
         title = b.get("title", "")
         
-        # Mapeo a operadores con presencia en Colombia
+        # FILTRO ESTRICTO: ÚNICAMENTE CASAS EN COLOMBIA
         colombia_labels = []
-        if "Unibet" in title:
+        if "Unibet" in title or "BetRivers" in title or "Kambi" in title:
             colombia_labels.append("Rushbet (Kambi / Unibet)")
             colombia_labels.append("BetPlay (Kambi / Unibet)")
         elif "Betano" in title:
             colombia_labels.append("Betano (Kaizen Gaming)")
         elif "Stake" in title:
-            colombia_labels.append("Stake (Betradar)")
-        elif "Pinnacle" in title:
-            colombia_labels.append("Pinnacle (Referencia Pro)")
-        elif "Betfair" in title:
-            colombia_labels.append("Betfair (Internacional)")
-        elif "1xBet" in title:
-            colombia_labels.append("1xBet (Operador Latam)")
+            colombia_labels.append("Stake (Directa / Betradar)")
+        elif "DraftKings" in title or "SBTech" in title:
+            colombia_labels.append("Wplay (SBTech / DraftKings)")
+
+        # Si la casa no pertenece a Colombia, se omite
+        if not colombia_labels:
+            continue
 
         price = None
         for m in b.get("markets", []):
-            # Totales (Over / Under)
             if market in ["over25", "under25", "over15", "over35"] and m.get("key") == "totals":
                 target_pt = 2.5
                 if market == "over15": target_pt = 1.5
@@ -224,7 +240,6 @@ def analyze_match():
                         price = out.get("price")
                         break
 
-            # 1X2 (Ganador / Empate)
             elif market in ["home_win", "draw", "away_win"] and m.get("key") == "h2h":
                 for out in m.get("outcomes", []):
                     if market == "home_win" and out.get("name") == home_name:
@@ -234,19 +249,17 @@ def analyze_match():
                     elif market == "draw" and out.get("name").lower() == "draw":
                         price = out.get("price")
 
-        if price and colombia_labels:
+        if price:
             for lbl in colombia_labels:
                 if lbl not in seen:
                     seen.add(lbl)
-                    ev = (prob * price) - 1.0
+                    ev = (prob * float(price)) - 1.0
                     extracted_odds.append({
                         "name": lbl,
                         "quota": float(price),
-                        "ev": round(ev * 100, 2),
-                        "is_real": True
+                        "ev": round(ev * 100, 2)
                     })
 
-    # Ordenar de mayor a menor cuota real
     extracted_odds.sort(key=lambda x: x["quota"], reverse=True)
 
     return jsonify({
@@ -265,7 +278,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - Cuotas Reales</title>
+      <title>BetStat Pro - Casas Colombia</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -310,14 +323,14 @@ def index():
         .quick-days { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
         .btn-day { background: #1e293b; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
         .btn-day.active { background: #0284c7; border-color: #38bdf8; }
-        .no-data { text-align: center; font-size: 0.8rem; color: var(--muted); padding: 12px; }
+        .no-data { text-align: center; font-size: 0.8rem; color: var(--muted); padding: 14px; line-height: 1.4; }
       </style>
     </head>
     <body>
       <div class="app-container">
         <header>
           <h1>BETSTAT PRO</h1>
-          <p>Cuotas 100% Reales en Vivo & Modelo Justo</p>
+          <p>Operadores en Colombia (BetPlay, Rushbet, Betano, Stake, Wplay)</p>
         </header>
 
         <div class="card">
@@ -358,7 +371,7 @@ def index():
               <option value="over35">Más de 3.5 Goles</option>
             </select>
           </div>
-          <button onclick="runAnalysis()">Comparar con Cuotas de Mercado</button>
+          <button onclick="runAnalysis()">Comparar con Cuotas de Colombia</button>
         </div>
 
         <div class="card" id="resultsCard" style="display:none;">
@@ -374,7 +387,7 @@ def index():
             </div>
           </div>
           <div id="verdictBox" class="banner"></div>
-          <div class="title" style="margin-top:6px;">Cuotas Reales en Operadores (Colombia)</div>
+          <div class="title" style="margin-top:6px;">Cuotas en Operadores de Colombia</div>
           <div id="bookiesList"></div>
         </div>
       </div>
@@ -447,6 +460,7 @@ def index():
             market: document.getElementById("marketSel").value,
             home_name: match.home,
             away_name: match.away,
+            event_id: match.id,
             raw_event: match.raw_event
           };
 
@@ -466,8 +480,8 @@ def index():
 
           if (!data.bookmakers || data.bookmakers.length === 0) {
             vBox.className = "banner neg";
-            vBox.innerText = "No se encontraron cuotas abiertas para este mercado en este momento.";
-            bList.innerHTML = "<div class='no-data'>Las casas de apuestas aún no abren este mercado o están actualizando las líneas.</div>";
+            vBox.innerText = "No hay cuotas abiertas para este mercado en casas colombianas.";
+            bList.innerHTML = "<div class='no-data'>Ningún operador en Colombia ha publicado líneas para este mercado aún. Prueba seleccionando Ganador (1X2).</div>";
             document.getElementById("resultsCard").scrollIntoView({ behavior: 'smooth' });
             return;
           }
