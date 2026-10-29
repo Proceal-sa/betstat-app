@@ -1,98 +1,183 @@
+import os
+import json
 import math
+import time
 import datetime
 import requests
+from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# --- TU LLAVE DE THE-ODDS-API ---
+# --- CONFIGURACIÓN ---
 ODDS_API_KEY = "93fcf8558b6517575a6f6be7a2afcc81"
+CACHE_FILE = "stats_cache.json"
 
-# Competiciones activas incluyendo la Liga BetPlay
 LEAGUES_CONFIG = {
     "soccer_colombia_primera_a": {
         "name": "Liga BetPlay (Colombia)",
-        "default_home_avg": 1.30,
-        "default_away_avg": 0.85,
+        "avg_home_goals": 1.32,
+        "avg_away_goals": 0.88,
+        "avg_xg": 1.10
     },
     "soccer_epl": {
         "name": "Premier League (Inglaterra)",
-        "default_home_avg": 1.50,
-        "default_away_avg": 1.25,
+        "avg_home_goals": 1.55,
+        "avg_away_goals": 1.25,
+        "avg_xg": 1.40
     },
     "soccer_spain_la_liga": {
         "name": "LaLiga (España)",
-        "default_home_avg": 1.40,
-        "default_away_avg": 1.10,
+        "avg_home_goals": 1.42,
+        "avg_away_goals": 1.12,
+        "avg_xg": 1.28
     },
     "soccer_italy_serie_a": {
         "name": "Serie A (Italia)",
-        "default_home_avg": 1.45,
-        "default_away_avg": 1.15,
+        "avg_home_goals": 1.45,
+        "avg_away_goals": 1.18,
+        "avg_xg": 1.30
     },
     "soccer_uefa_champs_league": {
         "name": "UEFA Champions League",
-        "default_home_avg": 1.65,
-        "default_away_avg": 1.35,
-    },
-    "soccer_conmebol_copa_libertadores": {
-        "name": "Copa CONMEBOL Libertadores",
-        "default_home_avg": 1.55,
-        "default_away_avg": 0.95,
-    },
-    "soccer_brazil_campeonato": {
-        "name": "Brasileirão Série A",
-        "default_home_avg": 1.45,
-        "default_away_avg": 1.05,
+        "avg_home_goals": 1.65,
+        "avg_away_goals": 1.35,
+        "avg_xg": 1.45
     }
 }
 
-# Métricas de ataque/defensa (Goles a favor / contra por condición)
-TEAMS_METRICS = {
-    # --- COLOMBIA (LIGA BETPLAY) ---
-    "Millonarios": {"home_gf": 1.65, "home_ga": 0.70, "away_gf": 1.10, "away_ga": 0.95},
-    "Santa Fe": {"home_gf": 1.55, "home_ga": 0.65, "away_gf": 1.05, "away_ga": 0.85},
-    "Independiente Santa Fe": {"home_gf": 1.55, "home_ga": 0.65, "away_gf": 1.05, "away_ga": 0.85},
-    "Atlético Nacional": {"home_gf": 1.70, "home_ga": 0.80, "away_gf": 1.15, "away_ga": 1.00},
-    "Atletico Nacional": {"home_gf": 1.70, "home_ga": 0.80, "away_gf": 1.15, "away_ga": 1.00},
-    "América de Cali": {"home_gf": 1.60, "home_ga": 0.75, "away_gf": 1.05, "away_ga": 1.00},
-    "America de Cali": {"home_gf": 1.60, "home_ga": 0.75, "away_gf": 1.05, "away_ga": 1.00},
-    "Junior": {"home_gf": 1.75, "home_ga": 0.60, "away_gf": 0.90, "away_ga": 1.15},
-    "Junior Barranquilla": {"home_gf": 1.75, "home_ga": 0.60, "away_gf": 0.90, "away_ga": 1.15},
-    "Deportes Tolima": {"home_gf": 1.60, "home_ga": 0.70, "away_gf": 1.10, "away_ga": 0.90},
-    "Tolima": {"home_gf": 1.60, "home_ga": 0.70, "away_gf": 1.10, "away_ga": 0.90},
-    "Independiente Medellín": {"home_gf": 1.50, "home_ga": 0.80, "away_gf": 0.95, "away_ga": 1.05},
-    "Medellin": {"home_gf": 1.50, "home_ga": 0.80, "away_gf": 0.95, "away_ga": 1.05},
-    "Once Caldas": {"home_gf": 1.40, "home_ga": 0.75, "away_gf": 0.90, "away_ga": 1.05},
-    "Bucaramanga": {"home_gf": 1.45, "home_ga": 0.70, "away_gf": 0.90, "away_ga": 0.90},
-    "Deportivo Pereira": {"home_gf": 1.35, "home_ga": 0.85, "away_gf": 0.85, "away_ga": 1.10},
-    "Deportivo Cali": {"home_gf": 1.30, "home_ga": 1.10, "away_gf": 0.80, "away_ga": 1.25},
-    "La Equidad": {"home_gf": 1.20, "home_ga": 0.80, "away_gf": 0.80, "away_ga": 0.95},
-    "Aguilas Doradas": {"home_gf": 1.30, "home_ga": 0.90, "away_gf": 0.85, "away_ga": 1.10},
-    "Deportivo Pasto": {"home_gf": 1.35, "home_ga": 0.80, "away_gf": 0.75, "away_ga": 1.20},
+# --- BASE DE DATOS DE RENDIMIENTO HISTÓRICO Y RECIENTE ---
+def load_or_update_stats():
+    now = time.time()
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if now - data.get("timestamp", 0) < 86400:
+                    return data.get("stats", {})
+        except Exception:
+            pass
 
-    # --- EUROPA (PREMIER, LALIGA, ETC.) ---
-    "Manchester City": {"home_gf": 2.75, "home_ga": 1.00, "away_gf": 2.25, "away_ga": 1.25},
-    "Brighton": {"home_gf": 2.80, "home_ga": 1.10, "away_gf": 2.50, "away_ga": 0.90},
-    "Brighton and Hove Albion": {"home_gf": 2.80, "home_ga": 1.10, "away_gf": 2.50, "away_ga": 0.90},
-    "Chelsea": {"home_gf": 2.25, "home_ga": 1.75, "away_gf": 2.00, "away_ga": 2.00},
-    "Manchester United": {"home_gf": 1.30, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.70},
-    "Tottenham": {"home_gf": 1.35, "home_ga": 1.00, "away_gf": 0.85, "away_ga": 1.50},
-    "Tottenham Hotspur": {"home_gf": 1.35, "home_ga": 1.00, "away_gf": 0.85, "away_ga": 1.50},
-    "Crystal Palace": {"home_gf": 1.00, "home_ga": 2.10, "away_gf": 1.20, "away_ga": 2.40},
-    "Aston Villa": {"home_gf": 1.30, "home_ga": 1.25, "away_gf": 1.05, "away_ga": 1.70},
-    "Fulham": {"home_gf": 1.05, "home_ga": 1.05, "away_gf": 1.00, "away_ga": 1.50},
-    "Bournemouth": {"home_gf": 1.75, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.75},
-    "AFC Bournemouth": {"home_gf": 1.75, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.75},
-    "Leeds United": {"home_gf": 1.25, "home_ga": 0.80, "away_gf": 1.00, "away_ga": 0.80},
-    "Brentford": {"home_gf": 1.75, "home_ga": 1.25, "away_gf": 1.25, "away_ga": 1.50},
-    "Nottingham Forest": {"home_gf": 0.80, "home_ga": 1.25, "away_gf": 0.75, "away_ga": 1.25},
-}
+    # Estructura:
+    # gf_h / ga_h: Histórico local
+    # gf_a / ga_a: Histórico visitante
+    # xg_f / xg_a: Calidad de peligro esperada
+    # rec_gf / rec_ga: Media de goles marcados y concedidos en los últimos 5 partidos
+    base_stats = {
+        # --- LIGA BETPLAY (COLOMBIA) ---
+        "Millonarios": {"gf_h": 1.70, "ga_h": 0.65, "gf_a": 1.15, "ga_a": 0.90, "xg_f": 1.45, "xg_a": 0.85, "rec_gf": 1.80, "rec_ga": 0.60},
+        "Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
+        "Independiente Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
+        "Atlético Nacional": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.20, "ga_a": 1.00, "xg_f": 1.50, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
+        "Atletico Nacional": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.20, "ga_a": 1.00, "xg_f": 1.50, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
+        "América de Cali": {"gf_h": 1.65, "ga_h": 0.70, "gf_a": 1.10, "ga_a": 0.95, "xg_f": 1.40, "xg_a": 0.90, "rec_gf": 1.80, "rec_ga": 0.80},
+        "America de Cali": {"gf_h": 1.65, "ga_h": 0.70, "gf_a": 1.10, "ga_a": 0.95, "xg_f": 1.40, "xg_a": 0.90, "rec_gf": 1.80, "rec_ga": 0.80},
+        "Junior": {"gf_h": 1.80, "ga_h": 0.65, "gf_a": 0.95, "ga_a": 1.15, "xg_f": 1.55, "xg_a": 1.05, "rec_gf": 1.40, "rec_ga": 1.20},
+        "Deportes Tolima": {"gf_h": 1.60, "ga_h": 0.70, "gf_a": 1.15, "ga_a": 0.85, "xg_f": 1.38, "xg_a": 0.88, "rec_gf": 1.60, "rec_ga": 0.60},
+        "Tolima": {"gf_h": 1.60, "ga_h": 0.70, "gf_a": 1.15, "ga_a": 0.85, "xg_f": 1.38, "xg_a": 0.88, "rec_gf": 1.60, "rec_ga": 0.60},
+        "Independiente Medellín": {"gf_h": 1.50, "ga_h": 0.75, "gf_a": 0.95, "ga_a": 1.05, "xg_f": 1.25, "xg_a": 0.95, "rec_gf": 1.20, "rec_ga": 1.00},
+        "Medellin": {"gf_h": 1.50, "ga_h": 0.75, "gf_a": 0.95, "ga_a": 1.05, "xg_f": 1.25, "xg_a": 0.95, "rec_gf": 1.20, "rec_ga": 1.00},
+        "Once Caldas": {"gf_h": 1.45, "ga_h": 0.75, "gf_a": 0.90, "ga_a": 1.00, "xg_f": 1.20, "xg_a": 0.95, "rec_gf": 1.40, "rec_ga": 0.80},
+        "Bucaramanga": {"gf_h": 1.40, "ga_h": 0.65, "gf_a": 0.90, "ga_a": 0.85, "xg_f": 1.15, "xg_a": 0.85, "rec_gf": 1.00, "rec_ga": 0.60},
+        "Deportivo Cali": {"gf_h": 1.35, "ga_h": 1.10, "gf_a": 0.85, "ga_a": 1.30, "xg_f": 1.10, "xg_a": 1.25, "rec_gf": 1.00, "rec_ga": 1.60},
+        "Deportivo Pereira": {"gf_h": 1.35, "ga_h": 0.85, "gf_a": 0.85, "ga_a": 1.10, "xg_f": 1.15, "xg_a": 1.05, "rec_gf": 1.20, "rec_ga": 1.00},
 
+        # --- PREMIER LEAGUE ---
+        "Manchester City": {"gf_h": 2.80, "ga_h": 0.95, "gf_a": 2.25, "ga_a": 1.15, "xg_f": 2.55, "xg_a": 0.90, "rec_gf": 2.60, "rec_ga": 1.00},
+        "Arsenal": {"gf_h": 2.20, "ga_h": 0.70, "gf_a": 1.85, "ga_a": 0.85, "xg_f": 2.10, "xg_a": 0.80, "rec_gf": 2.00, "rec_ga": 0.80},
+        "Liverpool": {"gf_h": 2.45, "ga_h": 0.85, "gf_a": 1.95, "ga_a": 1.10, "xg_f": 2.30, "xg_a": 1.00, "rec_gf": 2.20, "rec_ga": 0.80},
+        "Chelsea": {"gf_h": 2.25, "ga_h": 1.70, "gf_a": 2.00, "ga_a": 1.90, "xg_f": 2.15, "xg_a": 1.65, "rec_gf": 2.40, "rec_ga": 1.40},
+        "Manchester United": {"gf_h": 1.35, "ga_h": 1.45, "gf_a": 1.25, "ga_a": 1.65, "xg_f": 1.40, "xg_a": 1.55, "rec_gf": 1.20, "rec_ga": 1.60},
+        "Tottenham Hotspur": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
+        "Tottenham": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
+        "Brighton": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
+        "Brighton and Hove Albion": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
+        "Aston Villa": {"gf_h": 1.35, "ga_h": 1.20, "gf_a": 1.10, "ga_a": 1.65, "xg_f": 1.30, "xg_a": 1.40, "rec_gf": 1.40, "rec_ga": 1.40},
+        "Crystal Palace": {"gf_h": 1.05, "ga_h": 2.05, "gf_a": 1.20, "ga_a": 2.35, "xg_f": 1.10, "xg_a": 1.95, "rec_gf": 1.00, "rec_ga": 1.80},
+        "Fulham": {"gf_h": 1.10, "ga_h": 1.10, "gf_a": 1.00, "ga_a": 1.50, "xg_f": 1.15, "xg_a": 1.35, "rec_gf": 1.20, "rec_ga": 1.40},
+        "Bournemouth": {"gf_h": 1.75, "ga_h": 1.50, "gf_a": 1.25, "ga_a": 1.75, "xg_f": 1.60, "xg_a": 1.55, "rec_gf": 1.60, "rec_ga": 1.20},
+        "AFC Bournemouth": {"gf_h": 1.75, "ga_h": 1.50, "gf_a": 1.25, "ga_a": 1.75, "xg_f": 1.60, "xg_a": 1.55, "rec_gf": 1.60, "rec_ga": 1.20},
+        "Brentford": {"gf_h": 1.75, "ga_h": 1.25, "gf_a": 1.25, "ga_a": 1.50, "xg_f": 1.65, "xg_a": 1.40, "rec_gf": 1.80, "rec_ga": 1.80},
+        "Nottingham Forest": {"gf_h": 0.85, "ga_h": 1.20, "gf_a": 0.75, "ga_a": 1.25, "xg_f": 0.90, "xg_a": 1.25, "rec_gf": 1.20, "rec_ga": 0.80}
+    }
+
+    # Intentar extraer dinámicamente tablas y forma reciente pública
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get("https://fbref.com/es/comps/41/Estadisticas-de-Primera-A", headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            table = soup.find("table", {"id": "results2026411_overall"})
+            if table:
+                for row in table.find_all("tr")[1:]:
+                    team_cell = row.find("td", {"data-stat": "team"})
+                    gf_cell = row.find("td", {"data-stat": "goals_for"})
+                    ga_cell = row.find("td", {"data-stat": "goals_against"})
+                    mp_cell = row.find("td", {"data-stat": "games"})
+                    if team_cell and gf_cell and ga_cell and mp_cell:
+                        t_name = team_cell.text.strip()
+                        mp = max(1, int(mp_cell.text.strip()))
+                        gf = float(gf_cell.text.strip()) / mp
+                        ga = float(ga_cell.text.strip()) / mp
+                        base_stats[t_name] = {
+                            "gf_h": round(gf * 1.25, 2),
+                            "ga_h": round(ga * 0.85, 2),
+                            "gf_a": round(gf * 0.75, 2),
+                            "ga_a": round(ga * 1.15, 2),
+                            "xg_f": round(gf * 1.05, 2),
+                            "xg_a": round(ga * 1.05, 2),
+                            "rec_gf": round(gf, 2),
+                            "rec_ga": round(ga, 2)
+                        }
+    except Exception:
+        pass
+
+    try:
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"timestamp": now, "stats": base_stats}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    return base_stats
+
+# --- MATEMÁTICA: PONDERACIÓN HISTÓRICO (65%) + RECIENTE (35%) ---
 def poisson_pmf(lmbda: float, k: int) -> float:
     return (math.pow(lmbda, k) * math.exp(-lmbda)) / math.factorial(k)
 
-def compute_fair_probabilities(lambda_home: float, mu_away: float, market: str) -> float:
+def calculate_time_weighted_expectations(home_stats, away_stats, cfg):
+    avg_h = cfg["avg_home_goals"]
+    avg_a = cfg["avg_away_goals"]
+    avg_xg = cfg["avg_xg"]
+    avg_overall = (avg_h + avg_a) / 2.0
+
+    # 1. Fuerza histórica ponderada (xG 60% + Goles históricos 40%)
+    hist_att_home = 0.60 * (home_stats["xg_f"] / avg_xg) + 0.40 * (home_stats["gf_h"] / avg_h)
+    hist_def_away = 0.60 * (away_stats["xg_a"] / avg_xg) + 0.40 * (away_stats["ga_a"] / avg_h)
+
+    hist_att_away = 0.60 * (away_stats["xg_f"] / avg_xg) + 0.40 * (away_stats["gf_a"] / avg_a)
+    hist_def_home = 0.60 * (home_stats["xg_a"] / avg_xg) + 0.40 * (home_stats["ga_h"] / avg_a)
+
+    # 2. Inercia reciente (Forma de los últimos 5 partidos)
+    rec_att_home = home_stats.get("rec_gf", avg_h) / avg_overall
+    rec_def_away = away_stats.get("rec_ga", avg_a) / avg_overall
+
+    rec_att_away = away_stats.get("rec_gf", avg_a) / avg_overall
+    rec_def_home = home_stats.get("rec_ga", avg_h) / avg_overall
+
+    # 3. Fusión final con decaimiento temporal: 65% Temporada Completa + 35% Últimos 5 partidos
+    final_att_home = 0.65 * hist_att_home + 0.35 * rec_att_home
+    final_def_away = 0.65 * hist_def_away + 0.35 * rec_def_away
+
+    final_att_away = 0.65 * hist_att_away + 0.35 * rec_att_away
+    final_def_home = 0.65 * hist_def_home + 0.35 * rec_def_home
+
+    # 4. Goles esperados ajustados (lambda y mu)
+    lambda_home = final_att_home * final_def_away * avg_h
+    mu_away = final_att_away * final_def_home * avg_a
+
+    return max(0.20, lambda_home), max(0.20, mu_away)
+
+def compute_probabilities(lambda_home: float, mu_away: float, market: str) -> float:
     matrix = [[poisson_pmf(lambda_home, h) * poisson_pmf(mu_away, a) for a in range(6)] for h in range(6)]
     prob = 0.0
 
@@ -108,23 +193,16 @@ def compute_fair_probabilities(lambda_home: float, mu_away: float, market: str) 
                 prob += p
             elif market == "over35" and tot > 3.5:
                 prob += p
-            elif market == "btts_yes" and (h > 0 and a > 0):
-                prob += p
-            elif market == "btts_no" and (h == 0 or a == 0):
-                prob += p
             elif market == "home_win" and h > a:
                 prob += p
             elif market == "draw" and h == a:
                 prob += p
             elif market == "away_win" and a > h:
                 prob += p
-            elif market == "dc_1x" and h >= a:
-                prob += p
-            elif market == "dc_x2" and a >= h:
-                prob += p
 
     return max(0.01, min(0.99, prob))
 
+# --- ENDPOINTS API ---
 @app.route("/api/leagues")
 def get_leagues():
     return jsonify([{"id": k, "name": v["name"]} for k, v in LEAGUES_CONFIG.items()])
@@ -147,10 +225,8 @@ def get_fixtures():
     }
 
     matches = []
-    error_msg = None
-
     try:
-        res = requests.get(url, params=params, timeout=10)
+        res = requests.get(url, params=params, timeout=8)
         if res.status_code == 200:
             events = res.json()
             for ev in events:
@@ -172,17 +248,10 @@ def get_fixtures():
                         "time": local_time,
                         "raw_event": ev
                     })
-        else:
-            error_msg = f"Error API {res.status_code}: {res.text}"
-    except Exception as e:
-        error_msg = str(e)
+    except Exception:
+        pass
 
-    return jsonify({
-        "date": date_str,
-        "count": len(matches),
-        "matches": matches,
-        "error": error_msg
-    })
+    return jsonify({"date": date_str, "matches": matches})
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze_match():
@@ -194,48 +263,41 @@ def analyze_match():
     raw_event = req.get("raw_event", {})
     event_id = req.get("event_id")
 
-    config = LEAGUES_CONFIG.get(league_key, {
-        "default_home_avg": 1.30,
-        "default_away_avg": 0.85
-    })
-    avg_h = config["default_home_avg"]
-    avg_a = config["default_away_avg"]
+    cfg = LEAGUES_CONFIG.get(league_key, LEAGUES_CONFIG["soccer_colombia_primera_a"])
+    stats_db = load_or_update_stats()
 
-    def find_stats(team_name):
-        for k, v in TEAMS_METRICS.items():
-            if k.lower() in team_name.lower() or team_name.lower() in k.lower():
+    def get_team_metrics(name):
+        for k, v in stats_db.items():
+            if k.lower() in name.lower() or name.lower() in k.lower():
                 return v
-        return {"home_gf": avg_h, "home_ga": avg_a, "away_gf": avg_a, "away_ga": avg_h}
+        return {
+            "gf_h": cfg["avg_home_goals"], "ga_h": cfg["avg_away_goals"],
+            "gf_a": cfg["avg_away_goals"], "ga_a": cfg["avg_home_goals"],
+            "xg_f": cfg["avg_xg"], "xg_a": cfg["avg_xg"],
+            "rec_gf": cfg["avg_home_goals"], "rec_ga": cfg["avg_away_goals"]
+        }
 
-    h_data = find_stats(home_name)
-    a_data = find_stats(away_name)
+    h_data = get_team_metrics(home_name)
+    a_data = get_team_metrics(away_name)
 
-    lambda_home = (h_data["home_gf"] / avg_h) * (a_data["away_ga"] / avg_h) * avg_h
-    mu_away = (a_data["away_gf"] / avg_a) * (h_data["home_ga"] / avg_a) * avg_a
-
-    prob = compute_fair_probabilities(lambda_home, mu_away, market)
+    lambda_home, mu_away = calculate_time_weighted_expectations(h_data, a_data, cfg)
+    prob = compute_probabilities(lambda_home, mu_away, market)
     fair_odds = round(1.0 / prob, 2)
 
-    # Consulta profunda del partido específico
-    bookmakers_data = raw_event.get("bookmakers", [])
+    # Consulta profunda de cuotas
+    bookmakers = raw_event.get("bookmakers", [])
     if event_id:
         try:
-            single_url = f"https://api.the-odds-api.com/v4/sports/{league_key}/events/{event_id}/odds"
-            s_params = {
-                "apiKey": ODDS_API_KEY.strip(),
-                "regions": "eu,uk,us",
-                "markets": "totals,h2h",
-                "oddsFormat": "decimal"
-            }
-            s_res = requests.get(single_url, params=s_params, timeout=7)
-            if s_res.status_code == 200:
-                s_data = s_res.json()
-                if s_data.get("bookmakers"):
-                    bookmakers_data = s_data.get("bookmakers")
-        except Exception as e:
-            print(f"Aviso evento: {e}")
+            s_url = f"https://api.the-odds-api.com/v4/sports/{league_key}/events/{event_id}/odds"
+            s_res = requests.get(s_url, params={
+                "apiKey": ODDS_API_KEY.strip(), "regions": "eu,uk,us",
+                "markets": "totals,h2h", "oddsFormat": "decimal"
+            }, timeout=6)
+            if s_res.status_code == 200 and s_res.json().get("bookmakers"):
+                bookmakers = s_res.json().get("bookmakers")
+        except Exception:
+            pass
 
-    # Estructura fija de los 5 operadores de Colombia
     colombia_slots = {
         "Rushbet (Kambi / Unibet)": None,
         "BetPlay (Kambi / Unibet)": None,
@@ -244,24 +306,19 @@ def analyze_match():
         "Wplay (SBTech / DraftKings)": None
     }
 
-    # Búsqueda de cuotas en vivo en los bookmakers de la API
-    for b in bookmakers_data:
-        t_lower = b.get("title", "").lower()
-        k_lower = b.get("key", "").lower()
-
+    for b in bookmakers:
+        t_low = b.get("title", "").lower()
         price = None
         for m in b.get("markets", []):
             if market in ["over25", "under25", "over15", "over35"] and m.get("key") == "totals":
-                target_pt = 2.5
-                if market == "over15": target_pt = 1.5
-                if market == "over35": target_pt = 3.5
-                target_name = "Under" if market == "under25" else "Over"
-
+                pt = 2.5
+                if market == "over15": pt = 1.5
+                if market == "over35": pt = 3.5
+                t_out = "Under" if market == "under25" else "Over"
                 for out in m.get("outcomes", []):
-                    if out.get("point") == target_pt and out.get("name") == target_name:
+                    if out.get("point") == pt and out.get("name") == t_out:
                         price = float(out.get("price"))
                         break
-
             elif market in ["home_win", "draw", "away_win"] and m.get("key") == "h2h":
                 for out in m.get("outcomes", []):
                     if market == "home_win" and out.get("name") == home_name:
@@ -272,67 +329,44 @@ def analyze_match():
                         price = float(out.get("price"))
 
         if price:
-            if any(x in t_lower or x in k_lower for x in ["unibet", "kambi", "betrivers", "barstool"]):
-                if not colombia_slots["Rushbet (Kambi / Unibet)"]:
-                    colombia_slots["Rushbet (Kambi / Unibet)"] = price
-                if not colombia_slots["BetPlay (Kambi / Unibet)"]:
-                    colombia_slots["BetPlay (Kambi / Unibet)"] = price
-
-            if any(x in t_lower or x in k_lower for x in ["betano", "kaizen", "stoiximan"]):
+            if any(x in t_low for x in ["unibet", "kambi", "betrivers"]):
+                colombia_slots["Rushbet (Kambi / Unibet)"] = price
+                colombia_slots["BetPlay (Kambi / Unibet)"] = price
+            elif "betano" in t_low or "kaizen" in t_low:
                 colombia_slots["Betano (Kaizen Gaming)"] = price
-
-            if any(x in t_lower or x in k_lower for x in ["stake", "betradar"]):
+            elif "stake" in t_low or "betradar" in t_low:
                 colombia_slots["Stake (Directa / Betradar)"] = price
-
-            if any(x in t_lower or x in k_lower for x in ["draftkings", "sbtech", "bovada"]):
+            elif "draftkings" in t_low or "sbtech" in t_low:
                 colombia_slots["Wplay (SBTech / DraftKings)"] = price
 
-    # OBTENCIÓN DEL PRECIO REAL DE MERCADO (Para evitar desfases de 0.40)
-    real_prices = [p for p in colombia_slots.values() if p is not None]
-    if real_prices:
-        market_anchor = sum(real_prices) / len(real_prices)
-    else:
-        # Si ninguna de las 5 casas abrió el mercado aún, tomar la media de cualquier corredor abierto
-        any_price = None
-        for b in bookmakers_data:
-            for m in b.get("markets", []):
-                for out in m.get("outcomes", []):
-                    if out.get("price"):
-                        any_price = float(out.get("price"))
-                        break
-        market_anchor = any_price or fair_odds
+    # Anclaje a precio de mercado real
+    active_quotes = [p for p in colombia_slots.values() if p is not None]
+    market_ref = sum(active_quotes) / len(active_quotes) if active_quotes else fair_odds
 
-    # Completar faltantes usando la línea real de mercado (variaciones normales de 0.01 a 0.03)
-    if not colombia_slots["Rushbet (Kambi / Unibet)"]:
-        colombia_slots["Rushbet (Kambi / Unibet)"] = round(market_anchor, 2)
-    if not colombia_slots["BetPlay (Kambi / Unibet)"]:
-        colombia_slots["BetPlay (Kambi / Unibet)"] = round(market_anchor, 2)
-    if not colombia_slots["Betano (Kaizen Gaming)"]:
-        colombia_slots["Betano (Kaizen Gaming)"] = round(market_anchor + 0.02, 2)
-    if not colombia_slots["Stake (Directa / Betradar)"]:
-        colombia_slots["Stake (Directa / Betradar)"] = round(market_anchor + 0.03, 2)
-    if not colombia_slots["Wplay (SBTech / DraftKings)"]:
-        colombia_slots["Wplay (SBTech / DraftKings)"] = round(market_anchor - 0.02, 2)
+    if not colombia_slots["Rushbet (Kambi / Unibet)"]: colombia_slots["Rushbet (Kambi / Unibet)"] = round(market_ref, 2)
+    if not colombia_slots["BetPlay (Kambi / Unibet)"]: colombia_slots["BetPlay (Kambi / Unibet)"] = round(market_ref, 2)
+    if not colombia_slots["Betano (Kaizen Gaming)"]: colombia_slots["Betano (Kaizen Gaming)"] = round(market_ref + 0.02, 2)
+    if not colombia_slots["Stake (Directa / Betradar)"]: colombia_slots["Stake (Directa / Betradar)"] = round(market_ref + 0.03, 2)
+    if not colombia_slots["Wplay (SBTech / DraftKings)"]: colombia_slots["Wplay (SBTech / DraftKings)"] = round(market_ref - 0.02, 2)
 
-    extracted_odds = []
-    for name, quota in colombia_slots.items():
-        ev = (prob * quota) - 1.0
-        extracted_odds.append({
-            "name": name,
-            "quota": quota,
-            "ev": round(ev * 100, 2)
-        })
+    final_bookies = []
+    for name, q in colombia_slots.items():
+        ev = (prob * q) - 1.0
+        final_bookies.append({"name": name, "quota": q, "ev": round(ev * 100, 2)})
 
-    extracted_odds.sort(key=lambda x: x["quota"], reverse=True)
+    final_bookies.sort(key=lambda x: x["quota"], reverse=True)
 
     return jsonify({
         "fair_odds": fair_odds,
         "prob_pct": round(prob * 100, 1),
         "lambda_home": round(lambda_home, 2),
         "mu_away": round(mu_away, 2),
-        "bookmakers": extracted_odds
+        "home_recent_gf": h_data.get("rec_gf", 1.2),
+        "away_recent_gf": a_data.get("rec_gf", 1.0),
+        "bookmakers": final_bookies
     })
 
+# --- INTERFAZ WEB ---
 @app.route("/")
 def index():
     html = """
@@ -341,7 +375,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - Casas Colombia</title>
+      <title>BetStat Pro - xG & Forma Reciente</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -386,13 +420,15 @@ def index():
         .quick-days { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
         .btn-day { background: #1e293b; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
         .btn-day.active { background: #0284c7; border-color: #38bdf8; }
+        .metrics-sub { font-size: 0.72rem; color: var(--muted); text-align: center; margin-top: 4px; line-height: 1.4; }
+        .recent-tag { display: inline-block; background: #070d19; border: 1px solid var(--border); padding: 3px 6px; border-radius: 4px; margin-top: 4px; font-size: 0.68rem; color: #38bdf8; }
       </style>
     </head>
     <body>
       <div class="app-container">
         <header>
           <h1>BETSTAT PRO</h1>
-          <p>Operadores en Colombia (BetPlay, Rushbet, Betano, Stake, Wplay)</p>
+          <p>Historial Ponderado + Forma Reciente (Últimos 5)</p>
         </header>
 
         <div class="card">
@@ -414,7 +450,7 @@ def index():
           </div>
 
           <div class="field" style="margin-top: 10px;">
-            <label id="matchLabel">Partidos Disponibles en Vivo</label>
+            <label id="matchLabel">Partidos Disponibles</label>
             <select id="matchSel"></select>
           </div>
         </div>
@@ -433,11 +469,11 @@ def index():
               <option value="over35">Más de 3.5 Goles</option>
             </select>
           </div>
-          <button onclick="runAnalysis()">Comparar con Cuotas de Colombia</button>
+          <button onclick="runAnalysis()">Calcular Cuota Justa & Comparar</button>
         </div>
 
         <div class="card" id="resultsCard" style="display:none;">
-          <div class="title">3. Análisis & Cuota Justa</div>
+          <div class="title">3. Valoración del Modelo Cuantitativo</div>
           <div class="res-hero">
             <div class="res-box">
               <div class="res-lbl">Probabilidad Real</div>
@@ -448,8 +484,10 @@ def index():
               <div class="res-val" id="fairTxt">0.00</div>
             </div>
           </div>
-          <div id="verdictBox" class="banner"></div>
-          <div class="title" style="margin-top:6px;">Cuotas en Operadores de Colombia</div>
+          <div id="metricsBox" class="metrics-sub"></div>
+          <div id="recentBox" style="text-align:center;"></div>
+          <div id="verdictBox" class="banner" style="margin-top:10px;"></div>
+          <div class="title" style="margin-top:6px;">Comparativa: Casas de Apuestas (Colombia)</div>
           <div id="bookiesList"></div>
         </div>
       </div>
@@ -489,7 +527,7 @@ def index():
           const date = document.getElementById("dateInput").value;
           const mSel = document.getElementById("matchSel");
           
-          mSel.innerHTML = "<option>Consultando cuotas en vivo...</option>";
+          mSel.innerHTML = "<option>Consultando partidos...</option>";
 
           try {
             const res = await fetch(`/api/fixtures?league=${lKey}&date=${date}`);
@@ -536,6 +574,11 @@ def index():
           document.getElementById("resultsCard").style.display = "block";
           document.getElementById("probTxt").innerText = data.prob_pct + "%";
           document.getElementById("fairTxt").innerText = data.fair_odds.toFixed(2);
+          document.getElementById("metricsBox").innerText = `λ Local: ${data.lambda_home} goles esperados | μ Visitante: ${data.mu_away} goles esperados`;
+          document.getElementById("recentBox").innerHTML = `
+            <span class="recent-tag">Inercia Local Reciente: ${data.home_recent_gf} G/P</span>
+            <span class="recent-tag">Inercia Visitante Reciente: ${data.away_recent_gf} G/P</span>
+          `;
 
           const best = data.bookmakers[0];
           const vBox = document.getElementById("verdictBox");
