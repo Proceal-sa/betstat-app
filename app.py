@@ -9,7 +9,7 @@ app = Flask(__name__)
 API_FOOTBALL_KEY = "e32ed33398dffd7d6aab3ddc1f5d9aa8"
 ODDS_API_KEY = "93fcf8558b6517575a6f6be7a2afcc81"
 
-# Configuración de ligas
+# Identificadores oficiales de competiciones en API-Football
 LEAGUES_CONFIG = {
     "epl": {
         "name": "Premier League (Inglaterra)",
@@ -62,34 +62,6 @@ LEAGUES_CONFIG = {
     },
 }
 
-# Calendario de respaldo con los partidos del 31 de Octubre de 2026
-SCHEDULE_FALLBACK_OCT31 = [
-    {"time": "07:30 AM", "home": "Chelsea", "away": "Manchester United", "status": "NS"},
-    {"time": "10:00 AM", "home": "Manchester City", "away": "Brighton", "status": "NS"},
-    {"time": "10:00 AM", "home": "Bournemouth", "away": "Leeds", "status": "NS"},
-    {"time": "10:00 AM", "home": "Brentford", "away": "Nottingham Forest", "status": "NS"},
-    {"time": "10:00 AM", "home": "Coventry", "away": "Sunderland", "status": "NS"},
-    {"time": "10:00 AM", "home": "Hull City", "away": "Ipswich", "status": "NS"},
-    {"time": "12:30 PM", "home": "Tottenham", "away": "Crystal Palace", "status": "NS"},
-    {"time": "03:00 PM", "home": "Aston Villa", "away": "Fulham", "status": "NS"}
-]
-
-# Rendimientos y métricas promedio de equipos (GF / GA)
-TEAMS_METRICS = {
-    "Manchester City": {"home_gf": 2.75, "home_ga": 1.00, "away_gf": 2.25, "away_ga": 1.25},
-    "Brighton": {"home_gf": 3.00, "home_ga": 1.00, "away_gf": 2.75, "away_ga": 0.75},
-    "Chelsea": {"home_gf": 2.25, "home_ga": 1.75, "away_gf": 2.00, "away_ga": 2.00},
-    "Manchester United": {"home_gf": 1.25, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.75},
-    "Tottenham": {"home_gf": 1.25, "home_ga": 1.00, "away_gf": 0.75, "away_ga": 1.50},
-    "Crystal Palace": {"home_gf": 1.00, "home_ga": 2.25, "away_gf": 1.25, "away_ga": 2.50},
-    "Aston Villa": {"home_gf": 1.25, "home_ga": 1.25, "away_gf": 1.00, "away_ga": 1.75},
-    "Fulham": {"home_gf": 1.00, "home_ga": 1.00, "away_gf": 1.00, "away_ga": 1.50},
-    "Bournemouth": {"home_gf": 1.75, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.75},
-    "Leeds": {"home_gf": 1.25, "home_ga": 0.75, "away_gf": 1.00, "away_ga": 0.75},
-    "Brentford": {"home_gf": 1.75, "home_ga": 1.25, "away_gf": 1.25, "away_ga": 1.50},
-    "Nottingham Forest": {"home_gf": 0.75, "home_ga": 1.25, "away_gf": 0.75, "away_ga": 1.25},
-}
-
 # --- CÁLCULO DE POISSON ---
 def poisson_pmf(lmbda: float, k: int) -> float:
     return (math.pow(lmbda, k) * math.exp(-lmbda)) / math.factorial(k)
@@ -134,52 +106,67 @@ def get_leagues():
 
 @app.route("/api/fixtures")
 def get_fixtures():
+    """Consulta de fixtures directamente a API-Sports en vivo"""
     league_key = request.args.get("league", "epl")
-    date_str = request.args.get("date")  # YYYY-MM-DD
+    date_str = request.args.get("date")  # Formato: YYYY-MM-DD
     
     if not date_str:
         date_str = datetime.date.today().strftime("%Y-%m-%d")
 
     config = LEAGUES_CONFIG.get(league_key)
     if not config:
-        return jsonify({"matches": []})
+        return jsonify({"matches": [], "error": "Liga no válida"})
 
-    matches = []
-
-    # Petición a API-Football con zona horaria de Colombia y sin forzar season rígido
     url = "https://v3.football.api-sports.io/fixtures"
-    headers = {"x-apisports-key": API_FOOTBALL_KEY}
+    headers = {
+        "x-apisports-key": API_FOOTBALL_KEY.strip(),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    
+    # Parámetros directos requeridos por API-Sports
     params = {
         "league": config["api_football_id"],
         "date": date_str,
         "timezone": "America/Bogota"
     }
 
-    try:
-        res = requests.get(url, headers=headers, params=params, timeout=8)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("response") and len(data["response"]) > 0:
-                for item in data["response"]:
-                    f_time = item["fixture"]["date"][11:16]
-                    matches.append({
-                        "id": item["fixture"]["id"],
-                        "home": item["teams"]["home"]["name"],
-                        "away": item["teams"]["away"]["name"],
-                        "time": f_time,
-                        "status": item["fixture"]["status"]["short"]
-                    })
-    except Exception as e:
-        print(f"Error consultando fixtures API-Football: {e}")
+    matches = []
+    api_error_msg = None
 
-    # Si la API no devolvió registros pero es la fecha del 31 de octubre de 2026, usar el fixture oficial
-    if not matches and league_key == "epl" and date_str == "2026-10-31":
-        matches = SCHEDULE_FALLBACK_OCT31
+    try:
+        res = requests.get(url, headers=headers, params=params, timeout=10)
+        data = res.json()
+
+        # Si API-Sports devuelve errores en su JSON
+        if data.get("errors"):
+            if isinstance(data["errors"], dict) and len(data["errors"]) > 0:
+                api_error_msg = " | ".join([f"{k}: {v}" for k, v in data["errors"].items()])
+            elif isinstance(data["errors"], list) and len(data["errors"]) > 0:
+                api_error_msg = " | ".join(data["errors"])
+
+        if data.get("response") and len(data["response"]) > 0:
+            for item in data["response"]:
+                fixture_raw_date = item["fixture"]["date"]
+                f_time = fixture_raw_date[11:16] if len(fixture_raw_date) >= 16 else "--:--"
+                status = item["fixture"]["status"]["short"]
+                
+                matches.append({
+                    "id": item["fixture"]["id"],
+                    "home": item["teams"]["home"]["name"],
+                    "away": item["teams"]["away"]["name"],
+                    "home_id": item["teams"]["home"]["id"],
+                    "away_id": item["teams"]["away"]["id"],
+                    "time": f_time,
+                    "status": status
+                })
+    except Exception as e:
+        api_error_msg = str(e)
 
     return jsonify({
         "date": date_str,
         "count": len(matches),
-        "matches": matches
+        "matches": matches,
+        "api_error": api_error_msg
     })
 
 @app.route("/api/analyze", methods=["POST"])
@@ -194,26 +181,20 @@ def analyze_match():
     avg_h = config["default_home_avg"]
     avg_a = config["default_away_avg"]
 
-    # Buscar métricas del equipo (por coincidencia parcial de texto)
-    def find_stats(team_name):
-        for k, v in TEAMS_METRICS.items():
-            if k.lower() in team_name.lower() or team_name.lower() in k.lower():
-                return v
-        return {"home_gf": 1.65, "home_ga": 1.10, "away_gf": 1.25, "away_ga": 1.35}
+    # Expectativa de gol promedio por defecto para modelado
+    h_gf, h_ga = 1.65, 1.10
+    a_gf, a_ga = 1.25, 1.35
 
-    h_data = find_stats(home_name)
-    a_data = find_stats(away_name)
-
-    lambda_home = (h_data["home_gf"] / avg_h) * (a_data["away_ga"] / avg_h) * avg_h
-    mu_away = (a_data["away_gf"] / avg_a) * (h_data["home_ga"] / avg_a) * avg_a
+    lambda_home = (h_gf / avg_h) * (a_ga / avg_h) * avg_h
+    mu_away = (a_gf / avg_a) * (h_ga / avg_a) * avg_a
 
     prob = compute_fair_probabilities(lambda_home, mu_away, market)
     fair_odds = round(1.0 / prob, 2)
 
-    # Consulta a The-Odds-API para extraer cuotas reales
+    # Consulta a The-Odds-API para cuotas en tiempo real
     odds_url = f"https://api.the-odds-api.com/v4/sports/{config['odds_api_sport']}/odds"
     odds_params = {
-        "apiKey": ODDS_API_KEY,
+        "apiKey": ODDS_API_KEY.strip(),
         "regions": "eu,us",
         "markets": "totals,h2h",
         "oddsFormat": "decimal"
@@ -281,7 +262,7 @@ def analyze_match():
     except Exception as e:
         print(f"Error consultando Odds-API: {e}")
 
-    # Operadores autorizados en Colombia con márgenes comerciales
+    # Si faltan casas en el feed se complementa con márgenes de operadores colombianos
     default_casas = [
         {"name": "Rushbet (Kambi / Unibet)", "factor": 0.945, "off": 0.03},
         {"name": "BetPlay (Kambi / Unibet)", "factor": 0.940, "off": 0.04},
@@ -320,7 +301,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - Partidos por Fecha</title>
+      <title>BetStat Pro - Live API</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -365,6 +346,7 @@ def index():
         .quick-days { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
         .btn-day { background: #1e293b; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
         .btn-day.active { background: #0284c7; border-color: #38bdf8; }
+        .error-box { background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #f87171; padding: 8px 10px; border-radius: 6px; font-size: 0.75rem; margin-top: 6px; display: none; }
       </style>
     </head>
     <body>
@@ -393,8 +375,9 @@ def index():
           </div>
 
           <div class="field" style="margin-top: 10px;">
-            <label id="matchLabel">Partidos Programados</label>
+            <label id="matchLabel">Partidos en Vivo (Desde API)</label>
             <select id="matchSel"></select>
+            <div id="apiErrorNotice" class="error-box"></div>
           </div>
         </div>
 
@@ -439,10 +422,9 @@ def index():
         let currentMatches = [];
 
         async function init() {
-          // Iniciar por defecto en Sábado 31 de Octubre de 2026
+          // Fecha por defecto: 2026-10-31
           document.getElementById("dateInput").value = "2026-10-31";
 
-          // Cargar ligas
           const res = await fetch("/api/leagues");
           const leagues = await res.json();
           const lSel = document.getElementById("leagueSel");
@@ -471,25 +453,38 @@ def index():
           const lKey = document.getElementById("leagueSel").value;
           const date = document.getElementById("dateInput").value;
           const mSel = document.getElementById("matchSel");
-          mSel.innerHTML = "<option>Cargando partidos...</option>";
+          const errBox = document.getElementById("apiErrorNotice");
+          
+          errBox.style.display = "none";
+          mSel.innerHTML = "<option>Consultando API en vivo...</option>";
 
-          const res = await fetch(`/api/fixtures?league=${lKey}&date=${date}`);
-          const data = await res.json();
-          currentMatches = data.matches || [];
+          try {
+            const res = await fetch(`/api/fixtures?league=${lKey}&date=${date}`);
+            const data = await res.json();
+            
+            if (data.api_error) {
+              errBox.style.display = "block";
+              errBox.innerText = "Aviso API: " + data.api_error;
+            }
 
-          if (currentMatches.length === 0) {
-            mSel.innerHTML = "<option value='none'>No hay partidos programados para esta fecha</option>";
-          } else {
-            mSel.innerHTML = currentMatches.map((m, i) => `
-              <option value="${i}">${m.time} | ${m.home} vs ${m.away}</option>
-            `).join("");
+            currentMatches = data.matches || [];
+
+            if (currentMatches.length === 0) {
+              mSel.innerHTML = "<option value='none'>No hay partidos registrados en la API para esta fecha</option>";
+            } else {
+              mSel.innerHTML = currentMatches.map((m, i) => `
+                <option value="${i}">${m.time} | ${m.home} vs ${m.away} (${m.status})</option>
+              `).join("");
+            }
+          } catch (e) {
+            mSel.innerHTML = "<option value='none'>Error al conectar con el servidor</option>";
           }
         }
 
         async function runAnalysis() {
           const mIdx = document.getElementById("matchSel").value;
           if (mIdx === "none" || currentMatches.length === 0) {
-            alert("Selecciona un partido válido.");
+            alert("No hay ningún partido seleccionado de la API.");
             return;
           }
 
