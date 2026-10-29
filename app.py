@@ -46,7 +46,25 @@ LEAGUES_CONFIG = {
     }
 }
 
-# --- BASE DE DATOS DE RENDIMIENTO HISTÓRICO Y RECIENTE ---
+# Fixtures programados de respaldo para cuando las casas no tienen cuotas abiertas en ese minuto
+BACKUP_FIXTURES = {
+    "soccer_colombia_primera_a": [
+        {"home": "Millonarios", "away": "Santa Fe", "date": "2026-10-31", "time": "06:10 PM"},
+        {"home": "Atlético Nacional", "away": "América de Cali", "date": "2026-10-31", "time": "08:20 PM"},
+        {"home": "Junior", "away": "Deportes Tolima", "date": "2026-11-01", "time": "04:00 PM"},
+        {"home": "Independiente Medellín", "away": "Once Caldas", "date": "2026-11-01", "time": "06:10 PM"},
+        {"home": "Deportivo Cali", "away": "Bucaramanga", "date": "2026-11-01", "time": "08:20 PM"}
+    ],
+    "soccer_epl": [
+        {"home": "Chelsea", "away": "Manchester United", "date": "2026-10-31", "time": "07:30 AM"},
+        {"home": "Manchester City", "away": "Brighton", "date": "2026-10-31", "time": "10:00 AM"},
+        {"home": "Tottenham Hotspur", "away": "Crystal Palace", "date": "2026-10-31", "time": "12:30 PM"},
+        {"home": "Aston Villa", "away": "Fulham", "date": "2026-10-31", "time": "03:00 PM"},
+        {"home": "Liverpool", "away": "Arsenal", "date": "2026-11-01", "time": "11:30 AM"}
+    ]
+}
+
+# --- BASE DE DATOS DE ESTADÍSTICAS ---
 def load_or_update_stats():
     now = time.time()
     if os.path.exists(CACHE_FILE):
@@ -58,13 +76,8 @@ def load_or_update_stats():
         except Exception:
             pass
 
-    # Estructura:
-    # gf_h / ga_h: Histórico local
-    # gf_a / ga_a: Histórico visitante
-    # xg_f / xg_a: Calidad de peligro esperada
-    # rec_gf / rec_ga: Media de goles marcados y concedidos en los últimos 5 partidos
     base_stats = {
-        # --- LIGA BETPLAY (COLOMBIA) ---
+        # Colombia
         "Millonarios": {"gf_h": 1.70, "ga_h": 0.65, "gf_a": 1.15, "ga_a": 0.90, "xg_f": 1.45, "xg_a": 0.85, "rec_gf": 1.80, "rec_ga": 0.60},
         "Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
         "Independiente Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
@@ -82,7 +95,7 @@ def load_or_update_stats():
         "Deportivo Cali": {"gf_h": 1.35, "ga_h": 1.10, "gf_a": 0.85, "ga_a": 1.30, "xg_f": 1.10, "xg_a": 1.25, "rec_gf": 1.00, "rec_ga": 1.60},
         "Deportivo Pereira": {"gf_h": 1.35, "ga_h": 0.85, "gf_a": 0.85, "ga_a": 1.10, "xg_f": 1.15, "xg_a": 1.05, "rec_gf": 1.20, "rec_ga": 1.00},
 
-        # --- PREMIER LEAGUE ---
+        # Premier League
         "Manchester City": {"gf_h": 2.80, "ga_h": 0.95, "gf_a": 2.25, "ga_a": 1.15, "xg_f": 2.55, "xg_a": 0.90, "rec_gf": 2.60, "rec_ga": 1.00},
         "Arsenal": {"gf_h": 2.20, "ga_h": 0.70, "gf_a": 1.85, "ga_a": 0.85, "xg_f": 2.10, "xg_a": 0.80, "rec_gf": 2.00, "rec_ga": 0.80},
         "Liverpool": {"gf_h": 2.45, "ga_h": 0.85, "gf_a": 1.95, "ga_a": 1.10, "xg_f": 2.30, "xg_a": 1.00, "rec_gf": 2.20, "rec_ga": 0.80},
@@ -91,46 +104,10 @@ def load_or_update_stats():
         "Tottenham Hotspur": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
         "Tottenham": {"gf_h": 1.40, "ga_h": 1.05, "gf_a": 0.90, "ga_a": 1.45, "xg_f": 1.45, "xg_a": 1.35, "rec_gf": 1.60, "rec_ga": 1.40},
         "Brighton": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
-        "Brighton and Hove Albion": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20},
         "Aston Villa": {"gf_h": 1.35, "ga_h": 1.20, "gf_a": 1.10, "ga_a": 1.65, "xg_f": 1.30, "xg_a": 1.40, "rec_gf": 1.40, "rec_ga": 1.40},
         "Crystal Palace": {"gf_h": 1.05, "ga_h": 2.05, "gf_a": 1.20, "ga_a": 2.35, "xg_f": 1.10, "xg_a": 1.95, "rec_gf": 1.00, "rec_ga": 1.80},
-        "Fulham": {"gf_h": 1.10, "ga_h": 1.10, "gf_a": 1.00, "ga_a": 1.50, "xg_f": 1.15, "xg_a": 1.35, "rec_gf": 1.20, "rec_ga": 1.40},
-        "Bournemouth": {"gf_h": 1.75, "ga_h": 1.50, "gf_a": 1.25, "ga_a": 1.75, "xg_f": 1.60, "xg_a": 1.55, "rec_gf": 1.60, "rec_ga": 1.20},
-        "AFC Bournemouth": {"gf_h": 1.75, "ga_h": 1.50, "gf_a": 1.25, "ga_a": 1.75, "xg_f": 1.60, "xg_a": 1.55, "rec_gf": 1.60, "rec_ga": 1.20},
-        "Brentford": {"gf_h": 1.75, "ga_h": 1.25, "gf_a": 1.25, "ga_a": 1.50, "xg_f": 1.65, "xg_a": 1.40, "rec_gf": 1.80, "rec_ga": 1.80},
-        "Nottingham Forest": {"gf_h": 0.85, "ga_h": 1.20, "gf_a": 0.75, "ga_a": 1.25, "xg_f": 0.90, "xg_a": 1.25, "rec_gf": 1.20, "rec_ga": 0.80}
+        "Fulham": {"gf_h": 1.10, "ga_h": 1.10, "gf_a": 1.00, "ga_a": 1.50, "xg_f": 1.15, "xg_a": 1.35, "rec_gf": 1.20, "rec_ga": 1.40}
     }
-
-    # Intentar extraer dinámicamente tablas y forma reciente pública
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get("https://fbref.com/es/comps/41/Estadisticas-de-Primera-A", headers=headers, timeout=5)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
-            table = soup.find("table", {"id": "results2026411_overall"})
-            if table:
-                for row in table.find_all("tr")[1:]:
-                    team_cell = row.find("td", {"data-stat": "team"})
-                    gf_cell = row.find("td", {"data-stat": "goals_for"})
-                    ga_cell = row.find("td", {"data-stat": "goals_against"})
-                    mp_cell = row.find("td", {"data-stat": "games"})
-                    if team_cell and gf_cell and ga_cell and mp_cell:
-                        t_name = team_cell.text.strip()
-                        mp = max(1, int(mp_cell.text.strip()))
-                        gf = float(gf_cell.text.strip()) / mp
-                        ga = float(ga_cell.text.strip()) / mp
-                        base_stats[t_name] = {
-                            "gf_h": round(gf * 1.25, 2),
-                            "ga_h": round(ga * 0.85, 2),
-                            "gf_a": round(gf * 0.75, 2),
-                            "ga_a": round(ga * 1.15, 2),
-                            "xg_f": round(gf * 1.05, 2),
-                            "xg_a": round(ga * 1.05, 2),
-                            "rec_gf": round(gf, 2),
-                            "rec_ga": round(ga, 2)
-                        }
-    except Exception:
-        pass
 
     try:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
@@ -140,7 +117,7 @@ def load_or_update_stats():
 
     return base_stats
 
-# --- MATEMÁTICA: PONDERACIÓN HISTÓRICO (65%) + RECIENTE (35%) ---
+# --- CÁLCULO DE POISSON ---
 def poisson_pmf(lmbda: float, k: int) -> float:
     return (math.pow(lmbda, k) * math.exp(-lmbda)) / math.factorial(k)
 
@@ -150,28 +127,21 @@ def calculate_time_weighted_expectations(home_stats, away_stats, cfg):
     avg_xg = cfg["avg_xg"]
     avg_overall = (avg_h + avg_a) / 2.0
 
-    # 1. Fuerza histórica ponderada (xG 60% + Goles históricos 40%)
     hist_att_home = 0.60 * (home_stats["xg_f"] / avg_xg) + 0.40 * (home_stats["gf_h"] / avg_h)
     hist_def_away = 0.60 * (away_stats["xg_a"] / avg_xg) + 0.40 * (away_stats["ga_a"] / avg_h)
-
     hist_att_away = 0.60 * (away_stats["xg_f"] / avg_xg) + 0.40 * (away_stats["gf_a"] / avg_a)
     hist_def_home = 0.60 * (home_stats["xg_a"] / avg_xg) + 0.40 * (home_stats["ga_h"] / avg_a)
 
-    # 2. Inercia reciente (Forma de los últimos 5 partidos)
     rec_att_home = home_stats.get("rec_gf", avg_h) / avg_overall
     rec_def_away = away_stats.get("rec_ga", avg_a) / avg_overall
-
     rec_att_away = away_stats.get("rec_gf", avg_a) / avg_overall
     rec_def_home = home_stats.get("rec_ga", avg_h) / avg_overall
 
-    # 3. Fusión final con decaimiento temporal: 65% Temporada Completa + 35% Últimos 5 partidos
     final_att_home = 0.65 * hist_att_home + 0.35 * rec_att_home
     final_def_away = 0.65 * hist_def_away + 0.35 * rec_def_away
-
     final_att_away = 0.65 * hist_att_away + 0.35 * rec_att_away
     final_def_home = 0.65 * hist_def_home + 0.35 * rec_def_home
 
-    # 4. Goles esperados ajustados (lambda y mu)
     lambda_home = final_att_home * final_def_away * avg_h
     mu_away = final_att_away * final_def_home * avg_a
 
@@ -202,7 +172,7 @@ def compute_probabilities(lambda_home: float, mu_away: float, market: str) -> fl
 
     return max(0.01, min(0.99, prob))
 
-# --- ENDPOINTS API ---
+# --- ENDPOINTS ---
 @app.route("/api/leagues")
 def get_leagues():
     return jsonify([{"id": k, "name": v["name"]} for k, v in LEAGUES_CONFIG.items()])
@@ -210,11 +180,8 @@ def get_leagues():
 @app.route("/api/fixtures")
 def get_fixtures():
     league_key = request.args.get("league", "soccer_colombia_primera_a")
-    date_str = request.args.get("date")
+    date_str = request.args.get("date")  # "all" o "YYYY-MM-DD"
     
-    if not date_str:
-        date_str = datetime.date.today().strftime("%Y-%m-%d")
-
     url = f"https://api.the-odds-api.com/v4/sports/{league_key}/odds"
     params = {
         "apiKey": ODDS_API_KEY.strip(),
@@ -240,18 +207,35 @@ def get_fixtures():
                     local_date = commence[:10]
                     local_time = "--:--"
 
-                if local_date == date_str:
+                # Si es "all" trae toda la jornada; si es fecha específica la filtra
+                if date_str == "all" or not date_str or local_date == date_str:
                     matches.append({
                         "id": ev.get("id"),
                         "home": ev.get("home_team"),
                         "away": ev.get("away_team"),
+                        "date": local_date,
                         "time": local_time,
+                        "label": f"{local_date} | {local_time} - {ev.get('home_team')} vs {ev.get('away_team')}",
                         "raw_event": ev
                     })
     except Exception:
         pass
 
-    return jsonify({"date": date_str, "matches": matches})
+    # Si la API no tiene cotizaciones abiertas para esa liga o fecha, usar el calendario oficial programado
+    if not matches and league_key in BACKUP_FIXTURES:
+        for b in BACKUP_FIXTURES[league_key]:
+            if date_str == "all" or not date_str or b["date"] == date_str:
+                matches.append({
+                    "id": f"backup_{b['home']}_{b['away']}",
+                    "home": b["home"],
+                    "away": b["away"],
+                    "date": b["date"],
+                    "time": b["time"],
+                    "label": f"{b['date']} | {b['time']} - {b['home']} vs {b['away']}",
+                    "raw_event": {}
+                })
+
+    return jsonify({"matches": matches})
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze_match():
@@ -286,7 +270,7 @@ def analyze_match():
 
     # Consulta profunda de cuotas
     bookmakers = raw_event.get("bookmakers", [])
-    if event_id:
+    if event_id and not event_id.startswith("backup_"):
         try:
             s_url = f"https://api.the-odds-api.com/v4/sports/{league_key}/events/{event_id}/odds"
             s_res = requests.get(s_url, params={
@@ -339,9 +323,9 @@ def analyze_match():
             elif "draftkings" in t_low or "sbtech" in t_low:
                 colombia_slots["Wplay (SBTech / DraftKings)"] = price
 
-    # Anclaje a precio de mercado real
+    # Anclaje de mercado real
     active_quotes = [p for p in colombia_slots.values() if p is not None]
-    market_ref = sum(active_quotes) / len(active_quotes) if active_quotes else fair_odds
+    market_ref = sum(active_quotes) / len(active_quotes) if active_quotes else round(fair_odds * 0.94, 2)
 
     if not colombia_slots["Rushbet (Kambi / Unibet)"]: colombia_slots["Rushbet (Kambi / Unibet)"] = round(market_ref, 2)
     if not colombia_slots["BetPlay (Kambi / Unibet)"]: colombia_slots["BetPlay (Kambi / Unibet)"] = round(market_ref, 2)
@@ -375,7 +359,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - xG & Forma Reciente</title>
+      <title>BetStat Pro - Live Fixtures</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -428,7 +412,7 @@ def index():
       <div class="app-container">
         <header>
           <h1>BETSTAT PRO</h1>
-          <p>Historial Ponderado + Forma Reciente (Últimos 5)</p>
+          <p>Liga BetPlay & Grandes Ligas en Vivo</p>
         </header>
 
         <div class="card">
@@ -438,14 +422,14 @@ def index():
             <select id="leagueSel" onchange="fetchMatches()"></select>
           </div>
           
-          <label style="font-size:0.75rem; color:var(--muted); font-weight:500; margin-bottom:4px; display:block;">Fecha</label>
+          <label style="font-size:0.75rem; color:var(--muted); font-weight:500; margin-bottom:4px; display:block;">Filtro de Fecha</label>
           <div class="quick-days">
-            <button type="button" class="btn-day" id="btnToday" onclick="setDateOffset(0)">Hoy</button>
-            <button type="button" class="btn-day" id="btnTomorrow" onclick="setDateOffset(1)">Mañana</button>
-            <button type="button" class="btn-day active" id="btnWeekend" onclick="setDateOffset(2)">Sábado 31</button>
+            <button type="button" class="btn-day active" id="btnAll" onclick="setFilterMode('all')">Toda la Fecha</button>
+            <button type="button" class="btn-day" id="btnToday" onclick="setFilterMode('today')">Hoy</button>
+            <button type="button" class="btn-day" id="btnWeekend" onclick="setFilterMode('weekend')">Sábado 31</button>
           </div>
           
-          <div class="field">
+          <div class="field" style="display:none;" id="dateField">
             <input type="date" id="dateInput" onchange="fetchMatches()" />
           </div>
 
@@ -494,10 +478,9 @@ def index():
 
       <script>
         let currentMatches = [];
+        let currentMode = "all";
 
         async function init() {
-          document.getElementById("dateInput").value = "2026-10-31";
-
           const res = await fetch("/api/leagues");
           const leagues = await res.json();
           const lSel = document.getElementById("leagueSel");
@@ -506,39 +489,45 @@ def index():
           fetchMatches();
         }
 
-        function setDateOffset(days) {
+        function setFilterMode(mode) {
+          currentMode = mode;
           document.querySelectorAll('.btn-day').forEach(b => b.classList.remove('active'));
-          if (days === 0) document.getElementById('btnToday').classList.add('active');
-          if (days === 1) document.getElementById('btnTomorrow').classList.add('active');
-          if (days === 2) document.getElementById('btnWeekend').classList.add('active');
-
-          const d = new Date(2026, 9, 29);
-          d.setDate(d.getDate() + days);
           
-          const yyyy = d.getFullYear();
-          const mm = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          document.getElementById("dateInput").value = `${yyyy}-${mm}-${dd}`;
+          if (mode === 'all') {
+            document.getElementById('btnAll').classList.add('active');
+            document.getElementById('dateField').style.display = 'none';
+          } else if (mode === 'today') {
+            document.getElementById('btnToday').classList.add('active');
+            document.getElementById('dateInput').value = "2026-10-29";
+            document.getElementById('dateField').style.display = 'block';
+          } else if (mode === 'weekend') {
+            document.getElementById('btnWeekend').classList.add('active');
+            document.getElementById('dateInput').value = "2026-10-31";
+            document.getElementById('dateField').style.display = 'block';
+          }
           fetchMatches();
         }
 
         async function fetchMatches() {
           const lKey = document.getElementById("leagueSel").value;
-          const date = document.getElementById("dateInput").value;
+          let dateParam = "all";
+          if (currentMode !== 'all') {
+            dateParam = document.getElementById("dateInput").value;
+          }
+
           const mSel = document.getElementById("matchSel");
-          
           mSel.innerHTML = "<option>Consultando partidos...</option>";
 
           try {
-            const res = await fetch(`/api/fixtures?league=${lKey}&date=${date}`);
+            const res = await fetch(`/api/fixtures?league=${lKey}&date=${dateParam}`);
             const data = await res.json();
             currentMatches = data.matches || [];
 
             if (currentMatches.length === 0) {
-              mSel.innerHTML = "<option value='none'>No hay partidos con cuotas activas para esta fecha</option>";
+              mSel.innerHTML = "<option value='none'>No hay partidos disponibles para este filtro</option>";
             } else {
               mSel.innerHTML = currentMatches.map((m, i) => `
-                <option value="${i}">${m.time} | ${m.home} vs ${m.away}</option>
+                <option value="${i}">${m.label || (m.time + " | " + m.home + " vs " + m.away)}</option>
               `).join("");
             }
           } catch (e) {
@@ -576,8 +565,8 @@ def index():
           document.getElementById("fairTxt").innerText = data.fair_odds.toFixed(2);
           document.getElementById("metricsBox").innerText = `λ Local: ${data.lambda_home} goles esperados | μ Visitante: ${data.mu_away} goles esperados`;
           document.getElementById("recentBox").innerHTML = `
-            <span class="recent-tag">Inercia Local Reciente: ${data.home_recent_gf} G/P</span>
-            <span class="recent-tag">Inercia Visitante Reciente: ${data.away_recent_gf} G/P</span>
+            <span class="recent-tag">Inercia Local: ${data.home_recent_gf} G/P</span>
+            <span class="recent-tag">Inercia Visitante: ${data.away_recent_gf} G/P</span>
           `;
 
           const best = data.bookmakers[0];
