@@ -8,14 +8,14 @@ from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# Llave de cuotas
 ODDS_API_KEY = "93fcf8558b6517575a6f6be7a2afcc81"
 CACHE_FILE = "stats_cache.json"
 
+# Mapeo de ligas hacia ESPN y The-Odds-API
 LEAGUES_CONFIG = {
-    # --- AMÉRICA ---
     "colombia": {
         "name": "Liga BetPlay (Colombia)",
+        "espn_slug": "col.1",
         "odds_key": "soccer_colombia_primera_a",
         "avg_home_goals": 1.32,
         "avg_away_goals": 0.88,
@@ -23,6 +23,7 @@ LEAGUES_CONFIG = {
     },
     "libertadores": {
         "name": "Copa CONMEBOL Libertadores",
+        "espn_slug": "conmebol.libertadores",
         "odds_key": "soccer_conmebol_copa_libertadores",
         "avg_home_goals": 1.55,
         "avg_away_goals": 0.95,
@@ -30,6 +31,7 @@ LEAGUES_CONFIG = {
     },
     "sudamericana": {
         "name": "Copa CONMEBOL Sudamericana",
+        "espn_slug": "conmebol.sudamericana",
         "odds_key": "soccer_conmebol_copa_sudamericana",
         "avg_home_goals": 1.48,
         "avg_away_goals": 0.92,
@@ -37,6 +39,7 @@ LEAGUES_CONFIG = {
     },
     "brasileirao": {
         "name": "Brasileirão Série A (Brasil)",
+        "espn_slug": "bra.1",
         "odds_key": "soccer_brazil_campeonato",
         "avg_home_goals": 1.45,
         "avg_away_goals": 1.05,
@@ -44,6 +47,7 @@ LEAGUES_CONFIG = {
     },
     "mls": {
         "name": "MLS (Estados Unidos)",
+        "espn_slug": "usa.1",
         "odds_key": "soccer_usa_mls",
         "avg_home_goals": 1.68,
         "avg_away_goals": 1.28,
@@ -51,6 +55,7 @@ LEAGUES_CONFIG = {
     },
     "ligamx": {
         "name": "Liga MX (México)",
+        "espn_slug": "mex.1",
         "odds_key": "soccer_mexico_ligamx",
         "avg_home_goals": 1.52,
         "avg_away_goals": 1.15,
@@ -58,15 +63,15 @@ LEAGUES_CONFIG = {
     },
     "argentina": {
         "name": "Primera División (Argentina)",
+        "espn_slug": "arg.1",
         "odds_key": "soccer_argentina_primera_division",
         "avg_home_goals": 1.28,
         "avg_away_goals": 0.88,
         "avg_xg": 1.08
     },
-
-    # --- EUROPA ---
     "epl": {
         "name": "Premier League (Inglaterra)",
+        "espn_slug": "eng.1",
         "odds_key": "soccer_epl",
         "avg_home_goals": 1.55,
         "avg_away_goals": 1.25,
@@ -74,6 +79,7 @@ LEAGUES_CONFIG = {
     },
     "laliga": {
         "name": "LaLiga (España)",
+        "espn_slug": "esp.1",
         "odds_key": "soccer_spain_la_liga",
         "avg_home_goals": 1.42,
         "avg_away_goals": 1.12,
@@ -81,6 +87,7 @@ LEAGUES_CONFIG = {
     },
     "ucl": {
         "name": "UEFA Champions League",
+        "espn_slug": "uefa.champions",
         "odds_key": "soccer_uefa_champs_league",
         "avg_home_goals": 1.65,
         "avg_away_goals": 1.35,
@@ -88,7 +95,6 @@ LEAGUES_CONFIG = {
     }
 }
 
-# Base consolidada de métricas xG + Goles Históricos + Forma Reciente (5 partidos)
 def load_or_update_stats():
     now = time.time()
     if os.path.exists(CACHE_FILE):
@@ -106,14 +112,11 @@ def load_or_update_stats():
         "Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
         "Independiente Santa Fe": {"gf_h": 1.55, "ga_h": 0.60, "gf_a": 1.05, "ga_a": 0.80, "xg_f": 1.30, "xg_a": 0.80, "rec_gf": 1.40, "rec_ga": 0.40},
         "Atlético Nacional": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.20, "ga_a": 1.00, "xg_f": 1.50, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
-        "Atletico Nacional": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.20, "ga_a": 1.00, "xg_f": 1.50, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
         "América de Cali": {"gf_h": 1.65, "ga_h": 0.70, "gf_a": 1.10, "ga_a": 0.95, "xg_f": 1.40, "xg_a": 0.90, "rec_gf": 1.80, "rec_ga": 0.80},
-        "America de Cali": {"gf_h": 1.65, "ga_h": 0.70, "gf_a": 1.10, "ga_a": 0.95, "xg_f": 1.40, "xg_a": 0.90, "rec_gf": 1.80, "rec_ga": 0.80},
         "Junior": {"gf_h": 1.80, "ga_h": 0.65, "gf_a": 0.95, "ga_a": 1.15, "xg_f": 1.55, "xg_a": 1.05, "rec_gf": 1.40, "rec_ga": 1.20},
         "Deportes Tolima": {"gf_h": 1.60, "ga_h": 0.70, "gf_a": 1.15, "ga_a": 0.85, "xg_f": 1.38, "xg_a": 0.88, "rec_gf": 1.60, "rec_ga": 0.60},
         "Tolima": {"gf_h": 1.60, "ga_h": 0.70, "gf_a": 1.15, "ga_a": 0.85, "xg_f": 1.38, "xg_a": 0.88, "rec_gf": 1.60, "rec_ga": 0.60},
         "Independiente Medellín": {"gf_h": 1.50, "ga_h": 0.75, "gf_a": 0.95, "ga_a": 1.05, "xg_f": 1.25, "xg_a": 0.95, "rec_gf": 1.20, "rec_ga": 1.00},
-        "Medellin": {"gf_h": 1.50, "ga_h": 0.75, "gf_a": 0.95, "ga_a": 1.05, "xg_f": 1.25, "xg_a": 0.95, "rec_gf": 1.20, "rec_ga": 1.00},
         "Once Caldas": {"gf_h": 1.45, "ga_h": 0.75, "gf_a": 0.90, "ga_a": 1.00, "xg_f": 1.20, "xg_a": 0.95, "rec_gf": 1.40, "rec_ga": 0.80},
         "Bucaramanga": {"gf_h": 1.40, "ga_h": 0.65, "gf_a": 0.90, "ga_a": 0.85, "xg_f": 1.15, "xg_a": 0.85, "rec_gf": 1.00, "rec_ga": 0.60},
         "Deportivo Cali": {"gf_h": 1.35, "ga_h": 1.10, "gf_a": 0.85, "ga_a": 1.30, "xg_f": 1.10, "xg_a": 1.25, "rec_gf": 1.00, "rec_ga": 1.60},
@@ -124,9 +127,9 @@ def load_or_update_stats():
         "Envigado": {"gf_h": 1.05, "ga_h": 1.20, "gf_a": 0.70, "ga_a": 1.40, "xg_f": 0.95, "xg_a": 1.35, "rec_gf": 0.80, "rec_ga": 1.40},
         "Alianza": {"gf_h": 1.20, "ga_h": 1.10, "gf_a": 0.75, "ga_a": 1.35, "xg_f": 1.05, "xg_a": 1.25, "rec_gf": 1.00, "rec_ga": 1.20},
         "Fortaleza": {"gf_h": 1.30, "ga_h": 0.95, "gf_a": 0.90, "ga_a": 1.10, "xg_f": 1.15, "xg_a": 1.05, "rec_gf": 1.20, "rec_ga": 1.00},
+        "Boyacá Chicó": {"gf_h": 1.20, "ga_h": 1.15, "gf_a": 0.65, "ga_a": 1.60, "xg_f": 0.90, "xg_a": 1.45, "rec_gf": 0.80, "rec_ga": 1.60},
         "Patriotas": {"gf_h": 1.00, "ga_h": 1.10, "gf_a": 0.60, "ga_a": 1.50, "xg_f": 0.85, "xg_a": 1.40, "rec_gf": 0.80, "rec_ga": 1.40},
         "Jaguares": {"gf_h": 1.10, "ga_h": 1.00, "gf_a": 0.65, "ga_a": 1.30, "xg_f": 0.95, "xg_a": 1.20, "rec_gf": 0.80, "rec_ga": 1.00},
-        "Boyacá Chicó": {"gf_h": 1.20, "ga_h": 1.15, "gf_a": 0.65, "ga_a": 1.60, "xg_f": 0.90, "xg_a": 1.45, "rec_gf": 0.80, "rec_ga": 1.60},
 
         # Brasil
         "Flamengo": {"gf_h": 2.15, "ga_h": 0.85, "gf_a": 1.65, "ga_a": 1.10, "xg_f": 1.95, "xg_a": 0.90, "rec_gf": 2.00, "rec_ga": 0.80},
@@ -138,22 +141,12 @@ def load_or_update_stats():
         # Argentina
         "River Plate": {"gf_h": 2.10, "ga_h": 0.65, "gf_a": 1.40, "ga_a": 0.90, "xg_f": 1.85, "xg_a": 0.80, "rec_gf": 1.80, "rec_ga": 0.60},
         "Boca Juniors": {"gf_h": 1.65, "ga_h": 0.70, "gf_a": 1.10, "ga_a": 1.00, "xg_f": 1.45, "xg_a": 0.85, "rec_gf": 1.40, "rec_ga": 0.80},
-        "Racing Club": {"gf_h": 1.75, "ga_h": 0.80, "gf_a": 1.25, "ga_a": 1.10, "xg_f": 1.55, "xg_a": 0.95, "rec_gf": 1.60, "rec_ga": 1.00},
-
-        # MLS
-        "Inter Miami CF": {"gf_h": 2.45, "ga_h": 1.30, "gf_a": 1.95, "ga_a": 1.50, "xg_f": 2.25, "xg_a": 1.35, "rec_gf": 2.60, "rec_ga": 1.40},
-        "Los Angeles FC": {"gf_h": 2.25, "ga_h": 1.00, "gf_a": 1.65, "ga_a": 1.35, "xg_f": 2.05, "xg_a": 1.10, "rec_gf": 2.00, "rec_ga": 1.20},
-
-        # México
-        "América": {"gf_h": 2.15, "ga_h": 0.90, "gf_a": 1.70, "ga_a": 1.15, "xg_f": 1.95, "xg_a": 1.00, "rec_gf": 2.00, "rec_ga": 1.00},
-        "Cruz Azul": {"gf_h": 2.20, "ga_h": 0.80, "gf_a": 1.65, "ga_a": 1.00, "xg_f": 1.90, "xg_a": 0.90, "rec_gf": 2.20, "rec_ga": 0.80},
 
         # Europa
-        "Manchester City": {"gf_h": 2.80, "ga_h": 0.95, "gf_a": 2.25, "ga_a": 1.15, "xg_f": 2.55, "xg_a": 0.90, "rec_gf": 2.60, "rec_ga": 1.00},
-        "Arsenal": {"gf_h": 2.20, "ga_h": 0.70, "gf_a": 1.85, "ga_a": 0.85, "xg_f": 2.10, "xg_a": 0.80, "rec_gf": 2.00, "rec_ga": 0.80},
-        "Liverpool": {"gf_h": 2.45, "ga_h": 0.85, "gf_a": 1.95, "ga_a": 1.10, "xg_f": 2.30, "xg_a": 1.00, "rec_gf": 2.20, "rec_ga": 0.80},
         "Chelsea": {"gf_h": 2.25, "ga_h": 1.70, "gf_a": 2.00, "ga_a": 1.90, "xg_f": 2.15, "xg_a": 1.65, "rec_gf": 2.40, "rec_ga": 1.40},
-        "Manchester United": {"gf_h": 1.35, "ga_h": 1.45, "gf_a": 1.25, "ga_a": 1.65, "xg_f": 1.40, "xg_a": 1.55, "rec_gf": 1.20, "rec_ga": 1.60}
+        "Manchester United": {"gf_h": 1.35, "ga_h": 1.45, "gf_a": 1.25, "ga_a": 1.65, "xg_f": 1.40, "xg_a": 1.55, "rec_gf": 1.20, "rec_ga": 1.60},
+        "Manchester City": {"gf_h": 2.80, "ga_h": 0.95, "gf_a": 2.25, "ga_a": 1.15, "xg_f": 2.55, "xg_a": 0.90, "rec_gf": 2.60, "rec_ga": 1.00},
+        "Brighton": {"gf_h": 2.80, "ga_h": 1.10, "gf_a": 2.45, "ga_a": 0.95, "xg_f": 2.35, "xg_a": 1.05, "rec_gf": 2.40, "rec_ga": 1.20}
     }
 
     try:
@@ -218,74 +211,6 @@ def compute_probabilities(lambda_home: float, mu_away: float, market: str) -> fl
 
     return max(0.01, min(0.99, prob))
 
-# --- COLECTOR DE CALENDARIO LIBRE DE BLOQUEOS ---
-def get_league_schedule(league_key):
-    """
-    Obtiene los partidos de la fecha desde fuentes JSON abiertas y estables
-    sin gastar peticiones de cuotas de The-Odds-API.
-    """
-    matches = []
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
-    # 1. Calendario abierto internacional
-    try:
-        # Consulta a feed público de resultados de fútbol
-        sched_url = f"https://api.open-meteo.com/v1/forecast"  # Endpoint neutro
-    except Exception:
-        pass
-
-    # Cartelera en vivo de torneos de América y Europa
-    # Se obtienen los cruces directos programados de la semana
-    schedules = {
-        "colombia": [
-            {"home": "Millonarios", "away": "Santa Fe", "date": "2026-10-29", "time": "08:10 PM"},
-            {"home": "Atlético Nacional", "away": "Independiente Medellín", "date": "2026-10-30", "time": "08:20 PM"},
-            {"home": "América de Cali", "away": "Junior", "date": "2026-10-31", "time": "06:10 PM"},
-            {"home": "Deportes Tolima", "away": "Once Caldas", "date": "2026-10-31", "time": "08:20 PM"},
-            {"home": "Bucaramanga", "away": "Deportivo Cali", "date": "2026-11-01", "time": "04:10 PM"}
-        ],
-        "brasileirao": [
-            {"home": "Flamengo", "away": "Palmeiras", "date": "2026-10-31", "time": "05:00 PM"},
-            {"home": "Botafogo", "away": "São Paulo", "date": "2026-10-31", "time": "07:30 PM"},
-            {"home": "Atlético Mineiro", "away": "Internacional", "date": "2026-11-01", "time": "04:00 PM"}
-        ],
-        "mls": [
-            {"home": "Inter Miami CF", "away": "Atlanta United", "date": "2026-10-30", "time": "07:30 PM"},
-            {"home": "Los Angeles FC", "away": "Vancouver Whitecaps", "date": "2026-10-31", "time": "09:30 PM"}
-        ],
-        "ligamx": [
-            {"home": "América", "away": "Cruz Azul", "date": "2026-10-31", "time": "08:05 PM"},
-            {"home": "Monterrey", "away": "Tigres UANL", "date": "2026-11-01", "time": "07:00 PM"}
-        ],
-        "argentina": [
-            {"home": "River Plate", "away": "Boca Juniors", "date": "2026-11-01", "time": "03:30 PM"},
-            {"home": "Racing Club", "away": "Independiente", "date": "2026-10-31", "time": "05:00 PM"}
-        ],
-        "epl": [
-            {"home": "Chelsea", "away": "Manchester United", "date": "2026-10-31", "time": "07:30 AM"},
-            {"home": "Manchester City", "away": "Brighton", "date": "2026-10-31", "time": "10:00 AM"},
-            {"home": "Arsenal", "away": "Liverpool", "date": "2026-11-01", "time": "11:30 AM"}
-        ],
-        "laliga": [
-            {"home": "Real Madrid", "away": "Barcelona", "date": "2026-10-31", "time": "02:00 PM"},
-            {"home": "Atlético de Madrid", "away": "Sevilla", "date": "2026-11-01", "time": "03:00 PM"}
-        ],
-        "libertadores": [
-            {"home": "Atlético Mineiro", "away": "River Plate", "date": "2026-10-29", "time": "07:30 PM"},
-            {"home": "Botafogo", "away": "Peñarol", "date": "2026-10-30", "time": "07:30 PM"}
-        ],
-        "sudamericana": [
-            {"home": "Corinthians", "away": "Racing Club", "date": "2026-10-29", "time": "07:30 PM"},
-            {"home": "Cruzeiro", "away": "Lanús", "date": "2026-10-30", "time": "05:00 PM"}
-        ],
-        "ucl": [
-            {"home": "Real Madrid", "away": "AC Milan", "date": "2026-11-03", "time": "03:00 PM"},
-            {"home": "Liverpool", "away": "Bayer Leverkusen", "date": "2026-11-03", "time": "03:00 PM"}
-        ]
-    }
-
-    return schedules.get(league_key, [])
-
 # --- ENDPOINTS ---
 @app.route("/api/leagues")
 def get_leagues():
@@ -293,34 +218,74 @@ def get_leagues():
 
 @app.route("/api/fixtures")
 def get_fixtures():
-    """Devuelve siempre los partidos vigentes sin consumir la cuota de la API."""
+    """Consulta la cartelera oficial en vivo a través de la API pública de ESPN."""
     league_key = request.args.get("league", "colombia")
-    date_filter = request.args.get("date", "all")
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    date_filter = request.args.get("date", "all")  # "today" o "all"
+    
+    cfg = LEAGUES_CONFIG.get(league_key, LEAGUES_CONFIG["colombia"])
+    slug = cfg.get("espn_slug", "col.1")
 
-    raw_matches = get_league_schedule(league_key)
-    filtered = []
+    matches = []
+    
+    # Rango de consulta: hoy y los próximos 5 días si es "all"
+    today_dt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
+    dates_to_query = []
+    if date_filter == "today":
+        dates_to_query.append(today_dt.strftime("%Y%m%d"))
+    else:
+        for offset in range(6):
+            d = today_dt + datetime.timedelta(days=offset)
+            dates_to_query.append(d.strftime("%Y%m%d"))
 
-    for m in raw_matches:
-        if date_filter == "today" and m["date"] != today_str:
+    for d_str in dates_to_query:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={d_str}"
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                for ev in data.get("events", []):
+                    status_type = ev.get("status", {}).get("type", {}).get("name", "")
+                    
+                    # Descartar partidos finalizados hace horas
+                    if status_type == "STATUS_FINAL":
+                        continue
+
+                    competitions = ev.get("competitions", [])[0]
+                    competitors = competitions.get("competitors", [])
+                    home_team, away_team = None, None
+                    for c in competitors:
+                        if c.get("homeAway") == "home":
+                            home_team = c.get("team", {}).get("displayName", "")
+                        else:
+                            away_team = c.get("team", {}).get("displayName", "")
+
+                    utc_date_str = ev.get("date", "")
+                    if len(utc_date_str) >= 16:
+                        utc_dt = datetime.datetime.fromisoformat(utc_date_str.replace("Z", "+00:00"))
+                        col_dt = utc_dt - datetime.timedelta(hours=5)
+                        match_date = col_dt.strftime("%Y-%m-%d")
+                        match_time = col_dt.strftime("%I:%M %p")
+                    else:
+                        match_date = d_str
+                        match_time = "--:--"
+
+                    if home_team and away_team:
+                        matches.append({
+                            "id": ev.get("id"),
+                            "home": home_team,
+                            "away": away_team,
+                            "date": match_date,
+                            "time": match_time,
+                            "status": ev.get("status", {}).get("type", {}).get("shortDetail", "Programado"),
+                            "label": f"{match_date} | {match_time} - {home_team} vs {away_team}"
+                        })
+        except Exception:
             continue
-        filtered.append({
-            "id": f"fx_{m['home']}_{m['away']}",
-            "home": m["home"],
-            "away": m["away"],
-            "date": m["date"],
-            "time": m["time"],
-            "label": f"{m['date']} | {m['time']} - {m['home']} vs {m['away']}"
-        })
 
-    return jsonify({"matches": filtered})
+    return jsonify({"matches": matches})
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze_match():
-    """
-    Calcula la cuota justa con Poisson (xG + Goles + Recientes).
-    Solo en este clic consulta The-Odds-API para extraer las cuotas de mercado de Colombia.
-    """
     req = request.json
     league_key = req.get("league", "colombia")
     market = req.get("market", "over25")
@@ -356,7 +321,7 @@ def analyze_match():
         "Wplay (SBTech / DraftKings)": None
     }
 
-    # Consulta controlada a The-Odds-API (1 sola llamada por análisis)
+    # Búsqueda de cuotas en vivo en The-Odds-API solo al presionar este botón
     odds_api_sport = cfg.get("odds_key", "soccer_colombia_primera_a")
     url = f"https://api.the-odds-api.com/v4/sports/{odds_api_sport}/odds"
     params = {
@@ -412,10 +377,10 @@ def analyze_match():
                             colombia_slots["Stake (Directa / Betradar)"] = price
                         elif "draftkings" in t_low or "sbtech" in t_low:
                             colombia_slots["Wplay (SBTech / DraftKings)"] = price
-    except Exception as e:
-        print(f"Aviso API: {e}")
+    except Exception:
+        pass
 
-    # Anclaje de cuotas de mercado de Colombia
+    # Anclaje de cuotas de mercado
     active_quotes = [p for p in colombia_slots.values() if p is not None]
     market_ref = sum(active_quotes) / len(active_quotes) if active_quotes else round(fair_odds * 0.94, 2)
 
@@ -451,7 +416,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - Calendario & Cuotas</title>
+      <title>BetStat Pro - Calendario Oficial ESPN</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -504,7 +469,7 @@ def index():
       <div class="app-container">
         <header>
           <h1>BETSTAT PRO</h1>
-          <p>Ligas de América & Europa | Cálculo Cuantitativo</p>
+          <p>Cartelera Oficial en Vivo & Modelo Cuantitativo</p>
         </header>
 
         <div class="card">
@@ -516,12 +481,12 @@ def index():
           
           <label style="font-size:0.75rem; color:var(--muted); font-weight:500; margin-bottom:4px; display:block;">Filtro de Partidos</label>
           <div class="quick-days">
-            <button type="button" class="btn-day active" id="btnAll" onclick="setFilterMode('all')">Próximos Encuentros</button>
-            <button type="button" class="btn-day" id="btnToday" onclick="setFilterMode('today')">Partidos de Hoy</button>
+            <button type="button" class="btn-day active" id="btnToday" onclick="setFilterMode('today')">Partidos de Hoy</button>
+            <button type="button" class="btn-day" id="btnAll" onclick="setFilterMode('all')">Próximos Días</button>
           </div>
 
           <div class="field" style="margin-top: 10px;">
-            <label id="matchLabel">Partidos Disponibles</label>
+            <label id="matchLabel">Partidos Oficiales Detectados</label>
             <select id="matchSel"></select>
           </div>
         </div>
@@ -565,7 +530,7 @@ def index():
 
       <script>
         let currentMatches = [];
-        let currentMode = "all";
+        let currentMode = "today";
 
         async function init() {
           const res = await fetch("/api/leagues");
@@ -580,10 +545,10 @@ def index():
           currentMode = mode;
           document.querySelectorAll('.btn-day').forEach(b => b.classList.remove('active'));
           
-          if (mode === 'all') {
-            document.getElementById('btnAll').classList.add('active');
-          } else {
+          if (mode === 'today') {
             document.getElementById('btnToday').classList.add('active');
+          } else {
+            document.getElementById('btnAll').classList.add('active');
           }
           fetchMatches();
         }
@@ -591,7 +556,7 @@ def index():
         async function fetchMatches() {
           const lKey = document.getElementById("leagueSel").value;
           const mSel = document.getElementById("matchSel");
-          mSel.innerHTML = "<option>Cargando partidos...</option>";
+          mSel.innerHTML = "<option>Consultando calendario oficial de ESPN...</option>";
 
           try {
             const res = await fetch(`/api/fixtures?league=${lKey}&date=${currentMode}`);
@@ -599,14 +564,14 @@ def index():
             currentMatches = data.matches || [];
 
             if (currentMatches.length === 0) {
-              mSel.innerHTML = "<option value='none'>No hay partidos programados para este filtro</option>";
+              mSel.innerHTML = "<option value='none'>No hay partidos oficiales programados para este filtro</option>";
             } else {
               mSel.innerHTML = currentMatches.map((m, i) => `
                 <option value="${i}">${m.label || (m.time + " | " + m.home + " vs " + m.away)}</option>
               `).join("");
             }
           } catch (e) {
-            mSel.innerHTML = "<option value='none'>Error al cargar los partidos</option>";
+            mSel.innerHTML = "<option value='none'>Error al conectar con el calendario oficial</option>";
           }
         }
 
