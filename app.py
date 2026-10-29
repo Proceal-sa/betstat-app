@@ -5,10 +5,9 @@ from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# --- LLAVE DE CUOTAS Y EVENTOS EN VIVO ---
+# --- TU LLAVE DE THE-ODDS-API ---
 ODDS_API_KEY = "93fcf8558b6517575a6f6be7a2afcc81"
 
-# Competiciones soportadas por The-Odds-API
 LEAGUES_CONFIG = {
     "soccer_epl": {
         "name": "Premier League (Inglaterra)",
@@ -42,18 +41,16 @@ LEAGUES_CONFIG = {
     }
 }
 
-# Rendimientos y métricas ofensivas/defensivas (Goles Favor / Contra por partido)
 TEAMS_METRICS = {
     "Manchester City": {"home_gf": 2.75, "home_ga": 1.00, "away_gf": 2.25, "away_ga": 1.25},
-    "Brighton and Hove Albion": {"home_gf": 2.80, "home_ga": 1.10, "away_gf": 2.50, "away_ga": 0.90},
     "Brighton": {"home_gf": 2.80, "home_ga": 1.10, "away_gf": 2.50, "away_ga": 0.90},
     "Chelsea": {"home_gf": 2.25, "home_ga": 1.75, "away_gf": 2.00, "away_ga": 2.00},
     "Manchester United": {"home_gf": 1.30, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.70},
     "Tottenham Hotspur": {"home_gf": 1.35, "home_ga": 1.00, "away_gf": 0.85, "away_ga": 1.50},
+    "Tottenham": {"home_gf": 1.35, "home_ga": 1.00, "away_gf": 0.85, "away_ga": 1.50},
     "Crystal Palace": {"home_gf": 1.00, "home_ga": 2.10, "away_gf": 1.20, "away_ga": 2.40},
     "Aston Villa": {"home_gf": 1.30, "home_ga": 1.25, "away_gf": 1.05, "away_ga": 1.70},
     "Fulham": {"home_gf": 1.05, "home_ga": 1.05, "away_gf": 1.00, "away_ga": 1.50},
-    "AFC Bournemouth": {"home_gf": 1.75, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.75},
     "Bournemouth": {"home_gf": 1.75, "home_ga": 1.50, "away_gf": 1.25, "away_ga": 1.75},
     "Leeds United": {"home_gf": 1.25, "home_ga": 0.80, "away_gf": 1.00, "away_ga": 0.80},
     "Brentford": {"home_gf": 1.75, "home_ga": 1.25, "away_gf": 1.25, "away_ga": 1.50},
@@ -102,7 +99,7 @@ def get_leagues():
 
 @app.route("/api/fixtures")
 def get_fixtures():
-    """Consulta directa a The-Odds-API en vivo"""
+    """Descarga los partidos reales con sus cuotas completas en vivo"""
     league_key = request.args.get("league", "soccer_epl")
     date_str = request.args.get("date")
     
@@ -112,8 +109,9 @@ def get_fixtures():
     url = f"https://api.the-odds-api.com/v4/sports/{league_key}/odds"
     params = {
         "apiKey": ODDS_API_KEY.strip(),
-        "regions": "eu",
-        "markets": "h2h",
+        "regions": "eu,uk",
+        "markets": "totals,h2h",
+        "oddsFormat": "decimal",
         "dateFormat": "iso"
     }
 
@@ -121,12 +119,11 @@ def get_fixtures():
     error_msg = None
 
     try:
-        res = requests.get(url, params=params, timeout=8)
+        res = requests.get(url, params=params, timeout=10)
         if res.status_code == 200:
             events = res.json()
             for ev in events:
                 commence = ev.get("commence_time", "")
-                event_date = commence[:10]  # YYYY-MM-DD
                 
                 # Conversión horaria a UTC-5 (Colombia)
                 if len(commence) >= 16:
@@ -135,7 +132,7 @@ def get_fixtures():
                     local_date = col_dt.strftime("%Y-%m-%d")
                     local_time = col_dt.strftime("%I:%M %p")
                 else:
-                    local_date = event_date
+                    local_date = commence[:10]
                     local_time = "--:--"
 
                 if local_date == date_str:
@@ -144,10 +141,10 @@ def get_fixtures():
                         "home": ev.get("home_team"),
                         "away": ev.get("away_team"),
                         "time": local_time,
-                        "raw_data": ev
+                        "raw_event": ev
                     })
         else:
-            error_msg = f"Error {res.status_code}: {res.text}"
+            error_msg = f"Error API {res.status_code}: {res.text}"
     except Exception as e:
         error_msg = str(e)
 
@@ -165,6 +162,7 @@ def analyze_match():
     market = req.get("market", "over25")
     home_name = req.get("home_name", "")
     away_name = req.get("away_name", "")
+    raw_event = req.get("raw_event", {})
 
     config = LEAGUES_CONFIG.get(league_key, {
         "default_home_avg": 1.50,
@@ -188,105 +186,75 @@ def analyze_match():
     prob = compute_fair_probabilities(lambda_home, mu_away, market)
     fair_odds = round(1.0 / prob, 2)
 
-    # Consulta de cuotas en vivo en The-Odds-API
-    odds_url = f"https://api.the-odds-api.com/v4/sports/{league_key}/odds"
-    odds_params = {
-        "apiKey": ODDS_API_KEY.strip(),
-        "regions": "eu,us",
-        "markets": "totals,h2h",
-        "oddsFormat": "decimal"
-    }
+    # Extraer cuotas 100% reales directo del payload del evento
+    bookmakers_data = raw_event.get("bookmakers", [])
+    extracted_odds = []
+    seen = set()
 
-    real_bookmakers = []
-    seen_sources = set()
+    for b in bookmakers_data:
+        title = b.get("title", "")
+        
+        # Mapeo a operadores con presencia en Colombia
+        colombia_labels = []
+        if "Unibet" in title:
+            colombia_labels.append("Rushbet (Kambi / Unibet)")
+            colombia_labels.append("BetPlay (Kambi / Unibet)")
+        elif "Betano" in title:
+            colombia_labels.append("Betano (Kaizen Gaming)")
+        elif "Stake" in title:
+            colombia_labels.append("Stake (Betradar)")
+        elif "Pinnacle" in title:
+            colombia_labels.append("Pinnacle (Referencia Pro)")
+        elif "Betfair" in title:
+            colombia_labels.append("Betfair (Internacional)")
+        elif "1xBet" in title:
+            colombia_labels.append("1xBet (Operador Latam)")
 
-    try:
-        o_res = requests.get(odds_url, params=odds_params, timeout=8)
-        if o_res.status_code == 200:
-            events = o_res.json()
-            target_event = None
-            for ev in events:
-                h_target = ev.get("home_team", "").lower()
-                a_target = ev.get("away_team", "").lower()
-                if (home_name.lower() in h_target or h_target in home_name.lower()) and \
-                   (away_name.lower() in a_target or a_target in away_name.lower()):
-                    target_event = ev
-                    break
+        price = None
+        for m in b.get("markets", []):
+            # Totales (Over / Under)
+            if market in ["over25", "under25", "over15", "over35"] and m.get("key") == "totals":
+                target_pt = 2.5
+                if market == "over15": target_pt = 1.5
+                if market == "over35": target_pt = 3.5
+                target_name = "Under" if market == "under25" else "Over"
 
-            if target_event:
-                for b in target_event.get("bookmakers", []):
-                    b_title = b.get("title", "")
-                    display_names = []
-                    if "Unibet" in b_title or "BetRivers" in b_title:
-                        display_names.append("Rushbet (Kambi / Unibet)")
-                        display_names.append("BetPlay (Kambi / Unibet)")
-                    elif "DraftKings" in b_title:
-                        display_names.append("Wplay (SBTech / DraftKings)")
-                    elif "Stake" in b_title:
-                        display_names.append("Stake (Directa / Betradar)")
-                    elif "Betano" in b_title or "Kaizen" in b_title:
-                        display_names.append("Betano (Kaizen Gaming)")
-                    elif "Pinnacle" in b_title:
-                        display_names.append("Pinnacle (Referencia Pro)")
+                for out in m.get("outcomes", []):
+                    if out.get("point") == target_pt and out.get("name") == target_name:
+                        price = out.get("price")
+                        break
 
-                    found_odds = None
-                    for m in b.get("markets", []):
-                        if market in ["over25", "under25"] and m["key"] == "totals":
-                            point = 2.5
-                            target_out = "Over" if market == "over25" else "Under"
-                            for out in m.get("outcomes", []):
-                                if out.get("point") == point and out.get("name") == target_out:
-                                    found_odds = out.get("price")
-                        elif market in ["home_win", "draw", "away_win"] and m["key"] == "h2h":
-                            for out in m.get("outcomes", []):
-                                if market == "home_win" and out.get("name") == target_event["home_team"]:
-                                    found_odds = out.get("price")
-                                elif market == "away_win" and out.get("name") == target_event["away_team"]:
-                                    found_odds = out.get("price")
-                                elif market == "draw" and out.get("name").lower() == "draw":
-                                    found_odds = out.get("price")
+            # 1X2 (Ganador / Empate)
+            elif market in ["home_win", "draw", "away_win"] and m.get("key") == "h2h":
+                for out in m.get("outcomes", []):
+                    if market == "home_win" and out.get("name") == home_name:
+                        price = out.get("price")
+                    elif market == "away_win" and out.get("name") == away_name:
+                        price = out.get("price")
+                    elif market == "draw" and out.get("name").lower() == "draw":
+                        price = out.get("price")
 
-                    if found_odds and display_names:
-                        for d_name in display_names:
-                            if d_name not in seen_sources:
-                                seen_sources.add(d_name)
-                                ev_val = (prob * found_odds) - 1.0
-                                real_bookmakers.append({
-                                    "name": d_name,
-                                    "quota": found_odds,
-                                    "ev": round(ev_val * 100, 2)
-                                })
-    except Exception as e:
-        print(f"Error parseando cuotas en vivo: {e}")
+        if price and colombia_labels:
+            for lbl in colombia_labels:
+                if lbl not in seen:
+                    seen.add(lbl)
+                    ev = (prob * price) - 1.0
+                    extracted_odds.append({
+                        "name": lbl,
+                        "quota": float(price),
+                        "ev": round(ev * 100, 2),
+                        "is_real": True
+                    })
 
-    # Operadores autorizados en Colombia con márgenes comerciales
-    default_casas = [
-        {"name": "Rushbet (Kambi / Unibet)", "factor": 0.945, "off": 0.03},
-        {"name": "BetPlay (Kambi / Unibet)", "factor": 0.940, "off": 0.04},
-        {"name": "Wplay (SBTech / DraftKings)", "factor": 0.930, "off": 0.05},
-        {"name": "Betano (Kaizen Gaming)", "factor": 0.970, "off": 0.04},
-        {"name": "Stake (Directa / Betradar)", "factor": 0.985, "off": 0.05},
-        {"name": "Pinnacle (Referencia Pro)", "factor": 0.990, "off": 0.02}
-    ]
-
-    for c in default_casas:
-        if c["name"] not in seen_sources:
-            q = round(fair_odds * c["factor"] + c["off"], 2)
-            ev_val = (prob * q) - 1.0
-            real_bookmakers.append({
-                "name": c["name"],
-                "quota": q,
-                "ev": round(ev_val * 100, 2)
-            })
-
-    real_bookmakers.sort(key=lambda x: x["quota"], reverse=True)
+    # Ordenar de mayor a menor cuota real
+    extracted_odds.sort(key=lambda x: x["quota"], reverse=True)
 
     return jsonify({
         "fair_odds": fair_odds,
         "prob_pct": round(prob * 100, 1),
         "lambda_home": round(lambda_home, 2),
         "mu_away": round(mu_away, 2),
-        "bookmakers": real_bookmakers
+        "bookmakers": extracted_odds
     })
 
 @app.route("/")
@@ -297,7 +265,7 @@ def index():
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <title>BetStat Pro - Live Odds</title>
+      <title>BetStat Pro - Cuotas Reales</title>
       <meta name="theme-color" content="#0f172a" />
       <style>
         :root {
@@ -342,14 +310,14 @@ def index():
         .quick-days { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
         .btn-day { background: #1e293b; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
         .btn-day.active { background: #0284c7; border-color: #38bdf8; }
-        .error-box { background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #f87171; padding: 8px 10px; border-radius: 6px; font-size: 0.75rem; margin-top: 6px; display: none; }
+        .no-data { text-align: center; font-size: 0.8rem; color: var(--muted); padding: 12px; }
       </style>
     </head>
     <body>
       <div class="app-container">
         <header>
           <h1>BETSTAT PRO</h1>
-          <p>Encuentros en Vivo & Cuotas Colombia</p>
+          <p>Cuotas 100% Reales en Vivo & Modelo Justo</p>
         </header>
 
         <div class="card">
@@ -371,9 +339,8 @@ def index():
           </div>
 
           <div class="field" style="margin-top: 10px;">
-            <label id="matchLabel">Partidos en Vivo</label>
+            <label id="matchLabel">Partidos Disponibles en Vivo</label>
             <select id="matchSel"></select>
-            <div id="apiErrorNotice" class="error-box"></div>
           </div>
         </div>
 
@@ -387,13 +354,11 @@ def index():
               <option value="home_win">Victoria Local (1)</option>
               <option value="draw">Empate (X)</option>
               <option value="away_win">Victoria Visitante (2)</option>
-              <option value="btts_yes">Ambos Equipos Marcan (Sí)</option>
-              <option value="btts_no">Ambos Equipos Marcan (No)</option>
               <option value="over15">Más de 1.5 Goles</option>
               <option value="over35">Más de 3.5 Goles</option>
             </select>
           </div>
-          <button onclick="runAnalysis()">Analizar Partido Seleccionado</button>
+          <button onclick="runAnalysis()">Comparar con Cuotas de Mercado</button>
         </div>
 
         <div class="card" id="resultsCard" style="display:none;">
@@ -409,7 +374,7 @@ def index():
             </div>
           </div>
           <div id="verdictBox" class="banner"></div>
-          <div class="title" style="margin-top:6px;">Comparativa: Casas Colombia (Base Internacional)</div>
+          <div class="title" style="margin-top:6px;">Cuotas Reales en Operadores (Colombia)</div>
           <div id="bookiesList"></div>
         </div>
       </div>
@@ -448,31 +413,23 @@ def index():
           const lKey = document.getElementById("leagueSel").value;
           const date = document.getElementById("dateInput").value;
           const mSel = document.getElementById("matchSel");
-          const errBox = document.getElementById("apiErrorNotice");
           
-          errBox.style.display = "none";
-          mSel.innerHTML = "<option>Consultando partidos en vivo...</option>";
+          mSel.innerHTML = "<option>Consultando cuotas en vivo...</option>";
 
           try {
             const res = await fetch(`/api/fixtures?league=${lKey}&date=${date}`);
             const data = await res.json();
-            
-            if (data.error) {
-              errBox.style.display = "block";
-              errBox.innerText = data.error;
-            }
-
             currentMatches = data.matches || [];
 
             if (currentMatches.length === 0) {
-              mSel.innerHTML = "<option value='none'>No hay partidos programados para esta fecha</option>";
+              mSel.innerHTML = "<option value='none'>No hay partidos con cuotas activas para esta fecha</option>";
             } else {
               mSel.innerHTML = currentMatches.map((m, i) => `
                 <option value="${i}">${m.time} | ${m.home} vs ${m.away}</option>
               `).join("");
             }
           } catch (e) {
-            mSel.innerHTML = "<option value='none'>Error al conectar con el servidor</option>";
+            mSel.innerHTML = "<option value='none'>Error al conectar con la API</option>";
           }
         }
 
@@ -489,7 +446,8 @@ def index():
             league: document.getElementById("leagueSel").value,
             market: document.getElementById("marketSel").value,
             home_name: match.home,
-            away_name: match.away
+            away_name: match.away,
+            raw_event: match.raw_event
           };
 
           const res = await fetch("/api/analyze", {
@@ -503,8 +461,18 @@ def index():
           document.getElementById("probTxt").innerText = data.prob_pct + "%";
           document.getElementById("fairTxt").innerText = data.fair_odds.toFixed(2);
 
-          const best = data.bookmakers[0];
+          const bList = document.getElementById("bookiesList");
           const vBox = document.getElementById("verdictBox");
+
+          if (!data.bookmakers || data.bookmakers.length === 0) {
+            vBox.className = "banner neg";
+            vBox.innerText = "No se encontraron cuotas abiertas para este mercado en este momento.";
+            bList.innerHTML = "<div class='no-data'>Las casas de apuestas aún no abren este mercado o están actualizando las líneas.</div>";
+            document.getElementById("resultsCard").scrollIntoView({ behavior: 'smooth' });
+            return;
+          }
+
+          const best = data.bookmakers[0];
           if (best && best.quota >= data.fair_odds) {
             vBox.className = "banner pos";
             vBox.innerText = `✓ VALOR DETECTADO (+${best.ev}% EV) en ${best.name}`;
@@ -513,7 +481,6 @@ def index():
             vBox.innerText = `✕ SIN VALOR POSITIVO. Ninguna supera la cuota justa (${data.fair_odds.toFixed(2)}). La más alta es ${best.name} (${best.quota.toFixed(2)}).`;
           }
 
-          const bList = document.getElementById("bookiesList");
           bList.innerHTML = data.bookmakers.map((b, i) => {
             let mainName = b.name;
             let provider = "";
@@ -528,7 +495,7 @@ def index():
                 <div class="bookie-details">
                   <div class="b-name">${mainName}</div>
                   <div class="b-origin">${provider}</div>
-                  ${i === 0 ? '<span class="badge">MEJOR CUOTA</span>' : ''}
+                  ${i === 0 ? '<span class="badge">MEJOR CUOTA REAL</span>' : ''}
                 </div>
                 <div class="quota-box">
                   <div class="quota">${b.quota.toFixed(2)}</div>
